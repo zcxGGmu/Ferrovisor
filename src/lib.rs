@@ -14,12 +14,13 @@
 include!(concat!(env!("OUT_DIR"), "/config.rs"));
 
 // Core modules
-mod arch;
+#[macro_use]
+mod utils;
+mod config;
 mod core;
 mod drivers;
 mod emulator;
-mod utils;
-mod config;
+mod arch;
 
 // Re-export key modules for convenience
 pub use arch::*;
