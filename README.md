@@ -927,37 +927,76 @@ qemu-system-x86_64 -M pc -cpu host -smp 4 -m 2G \
 
 ```
 ferrovisor/
-├── src/
-│   ├── arch/                  # Architecture-specific code
-│   │   ├── riscv64/          # RISC-V 64-bit implementation
-│   │   │   ├── cpu/         # CPU management
-│   │   │   ├── mmu/         # Memory management unit
-│   │   │   ├── interrupt/   # Interrupt handling
-│   │   │   ├── virtualization/ # H-extension support
-│   │   │   ├── smp/         # Symmetric multiprocessing
-│   │   │   ├── devtree/     # Device tree support
-│   │   │   ├── debug/       # Debug support
-│   │   │   └── platform/    # Platform-specific code
-│   │   ├── aarch64/          # ARM64 implementation
-│   │   └── x86_64/           # x86_64 implementation
-│   ├── core/                  # Core hypervisor components
-│   │   ├── vm/              # Virtual machine management
-│   │   ├── vcpu/            # Virtual CPU management
-│   │   ├── memory/          # Memory management
-│   │   ├── scheduler/       # VCPU scheduling
-│   │   └── interrupt/       # Interrupt management
-│   ├── drivers/              # Device drivers
-│   │   ├── virtio/          # VirtIO framework
-│   │   ├── block/           # Block device drivers
-│   │   ├── network/         # Network device drivers
-│   │   └── console/         # Console drivers
-│   ├── emulator/             # Device emulators
-│   ├── libs/                  # Common libraries
-│   └── utils/                 # Utility functions
-├── docs/                      # Documentation
-├── scripts/                   # Build and utility scripts
+├── lib.rs                     # Main library entry point
+├── main.rs                    # Binary entry point
+├── build.rs                   # Build configuration
+├── Cargo.toml                 # Project metadata and dependencies
+├── README.md                  # Project documentation
+├── LICENSE                    # GPL-2.0 license
+├── arch/                      # Architecture-specific code
+│   ├── riscv64/              # RISC-V 64-bit implementation
+│   │   ├── cpu/             # CPU management and features
+│   │   ├── mmu/             # Memory management unit
+│   │   ├── interrupt/       # Interrupt handling
+│   │   ├── virtualization/  # RISC-V H-extension support
+│   │   ├── smp/             # Symmetric multiprocessing
+│   │   ├── devtree/         # Device tree support
+│   │   ├── debug/           # Debug and tracing support
+│   │   └── platform/        # Platform-specific code
+│   ├── aarch64/              # ARM64 implementation
+│   └── x86_64/               # x86_64 implementation
+├── core/                      # Core hypervisor components
+│   ├── vm/                   # Virtual machine management
+│   ├── vmm/                  # Virtual machine monitor
+│   ├── vcpu/                 # Virtual CPU management
+│   ├── memory/               # Memory management and allocation
+│   ├── interrupt/            # Interrupt management
+│   ├── scheduler/            # VCPU scheduling algorithms
+│   ├── schedalgo/            # Scheduling algorithm implementations
+│   ├── sync/                 # Synchronization primitives
+│   ├── block/                # Block device management
+│   ├── net/                  # Network management
+│   ├── vio/                  # Virtual I/O
+│   └── include/              # Core header files
+├── drivers/                   # Device drivers
+│   ├── virtio/               # VirtIO framework implementation
+│   │   ├── block/           # VirtIO block device
+│   │   ├── net/             # VirtIO network device
+│   │   ├── console/         # VirtIO console
+│   │   ├── gpu/             # VirtIO GPU
+│   │   ├── input/           # VirtIO input
+│   │   └── rng/             # VirtIO entropy
+│   ├── base/                 # Base driver framework
+│   │   ├── console/         # Console drivers
+│   │   ├── serial/          # Serial port drivers
+│   │   ├── timer/           # Timer drivers
+│   │   ├── interrupt/       # Interrupt controller
+│   │   └── pci/             # PCI bus support
+│   └── platform/            # Platform-specific drivers
+│       ├── uart/            # UART drivers
+│       ├── timer/           # Platform timers
+│       ├── gpio/            # GPIO drivers
+│       └── sysreg/          # System register access
+├── emulators/                 # Device emulators
+│   ├── uart/                 # UART emulation
+│   ├── rtc/                  # Real-time clock emulation
+│   └── gpio/                 # GPIO emulation
+├── utils/                     # Utility functions
+│   ├── bitmap/               # Bitmap operations
+│   ├── list/                 # Linked list implementations
+│   ├── console/              # Console utilities
+│   └── log/                  # Logging framework
+├── libs/                      # Common libraries
+├── config/                    # Configuration management
+├── commands/                  # Command-line interface
+├── daemons/                   # Background services
+├── tools/                     # Development tools
 ├── tests/                     # Tests and benchmarks
-└── tools/                     # Development tools
+├── examples/                  # Example applications
+└── docs/                      # Documentation
+    └── riscv/                # RISC-V specific documentation
+        ├── sbi-nacl/         # SBI nested acceleration
+        └── ...
 ```
 
 ## Development Status
