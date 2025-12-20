@@ -12,12 +12,12 @@ categories = ["embedded", "no-std", "os"]
 
 [lib]
 name = "ferrovisor"
-path = "src/lib.rs"
+path = "lib.rs"
 crate-type = ["staticlib"]  # Build as static library for linking
 
 [[bin]]
 name = "ferrovisor"
-path = "src/main.rs"
+path = "main.rs"
 
 # Feature flags for different architectures
 [features]
