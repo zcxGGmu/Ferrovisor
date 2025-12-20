@@ -33,9 +33,10 @@ Ferrovisor is designed with a clear, modular architecture:
 
 ### Setting up the Environment
 
-1. Install Rust:
+1. Install Rust nightly:
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup default nightly
 ```
 
 2. Install cross-compilers:
@@ -43,16 +44,85 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 # Ubuntu/Debian
 sudo apt-get install gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu gcc-x86-64-linux-gnu
 
+# macOS (with Homebrew)
+brew install aarch64-elf-gcc riscv64-elf-gcc x86_64-elf-gcc
+
 # Or install from your distribution's package manager
 ```
 
-3. Clone the repository:
+3. Install Rust targets:
+```bash
+rustup target add aarch64-unknown-none-softfloat
+rustup target add riscv64-unknown-none-elf
+rustup target add x86_64-unknown-none
+```
+
+4. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/ferrovisor.git
 cd ferrovisor
 ```
 
 ## Building
+
+### Using Make (Recommended)
+
+```bash
+# Build for ARM64 (default)
+make
+
+# Build for other architectures
+make TARGET=riscv64-unknown-none-elf
+make TARGET=x86_64-unknown-none
+
+# Build release version
+make release
+
+# Run in QEMU
+make run
+
+# Debug with GDB
+make debug
+
+# Clean build artifacts
+make clean
+
+# See all available targets
+make help
+```
+
+### Using Cargo Directly
+
+```bash
+# Build for ARM64
+cargo build --target aarch64-unknown-none-softfloat
+
+# Build for RISC-V
+cargo build --target riscv64-unknown-none-elf
+
+# Build for x86_64
+cargo build --target x86_64-unknown-none
+
+# Build release version
+cargo build --release --target aarch64-unknown-none-softfloat
+```
+
+## Configuration Options
+
+The build system supports various configuration options:
+
+```bash
+# Enable debug output
+make FEATURES="--features debug"
+
+# Enable allocator
+make FEATURES="--features allocator"
+
+# Enable verbose output
+make FEATURES="--features verbose"
+```
+
+## Running
 
 Build for ARM64:
 ```bash
