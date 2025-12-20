@@ -1,0 +1,18 @@
+[toolchain]
+channel = "nightly-2024-01-01"
+components = ["rust-src", "rustfmt", "clippy"]
+targets = [
+    "aarch64-unknown-none-softfloat",
+    "riscv64gc-unknown-none-elf",
+    "x86_64-unknown-none"
+]
+
+# Override for different architectures
+[target.aarch64-unknown-none-softfloat]
+linker = "aarch64-none-elf-gcc"
+
+[target.riscv64gc-unknown-none-elf]
+linker = "riscv64-unknown-elf-gcc"
+
+[target.x86_64-unknown-none]
+linker = "x86_64-elf-gcc"

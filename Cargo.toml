@@ -1,0 +1,78 @@
+[package]
+name = "ferrovisor"
+version = "0.1.0"
+authors = ["Ferrovisor Team <ferrovisor@example.com>"]
+edition = "2021"
+description = "A Rust-based Type-1 Hypervisor inspired by Xvisor"
+license = "GPL-2.0"
+repository = "https://github.com/yourusername/ferrovisor"
+readme = "README.md"
+keywords = ["hypervisor", "virtualization", "os", "embedded", "no_std"]
+categories = ["embedded", "no-std", "os"]
+
+[lib]
+name = "ferrovisor"
+path = "src/lib.rs"
+crate-type = ["staticlib"]  # Build as static library for linking
+
+[[bin]]
+name = "ferrovisor"
+path = "src/main.rs"
+
+# Feature flags for different architectures
+[features]
+default = ["arch_arm64", "allocator"]
+arch_arm64 = []
+arch_riscv64 = []
+arch_x86_64 = []
+allocator = []
+debug = []
+verbose = []
+
+[dependencies]
+# Core dependencies (no_std compatible)
+bitflags = { version = "2.4", default-features = false }
+log = { version = "0.4", default-features = false }
+num-traits = { version = "0.2", default-features = false }
+
+# Volatile memory access
+volatile = { version = "0.5", default-features = false }
+
+# Optional dependencies
+cfg-if = "1.0"
+embedded-hal = { version = "1.0", optional = true }
+
+# Target-specific dependencies
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+aarch64-cpu = { version = "10.0", default-features = false }
+tock-registers = { version = "0.9", default-features = false }
+
+[target.'cfg(target_arch = "riscv64")'.dependencies]
+riscv = { version = "0.11", default-features = false }
+
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86_64 = { version = "0.15", default-features = false }
+
+[dev-dependencies]
+# Test dependencies
+test-case = "3.3"
+
+# Build configuration
+[profile.dev]
+panic = "abort"
+debug = true
+
+[profile.release]
+panic = "abort"
+lto = true          # Link-time optimization
+codegen-units = 1   # Maximum optimization
+opt-level = "z"     # Optimize for size
+debug = false
+strip = true
+
+# Profile for custom targets
+[profile.dev.package."*"]
+opt-level = 0
+
+[profile.release.package."*"]
+opt-level = 3
