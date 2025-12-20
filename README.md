@@ -2,6 +2,10 @@
 
 <div align="center">
 
+<a href="README.zh-CN.md">
+  <img src="https://img.shields.io/badge/Language-中文-red?style=for-the-badge" alt="中文版">
+</a>
+
 ![Ferrovisor Logo](https://img.shields.io/badge/Ferrovisor-Rust--Based%20Hypervisor-blue?style=for-the-badge&logo=rust)
 ![License](https://img.shields.io/badge/License-GPL%20v2.0-green.svg?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-RISC--V%20%7C%20ARM64%20%7C%20x86__64-orange?style=for-the-badge)
