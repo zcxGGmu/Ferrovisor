@@ -55,87 +55,578 @@
 - **Nested Virtualization Support**: Run hypervisors within guest VMs for advanced use cases
 - **Comprehensive Debugging**: Built-in debugging, tracing, and profiling capabilities for development and production monitoring
 
-## Architecture
+## 📐 High-Level System Architecture
 
-<div style="transform: scale(2.5); transform-origin: top left; width: 250%; height: auto; margin-bottom: 200px;">
+<div style="transform: scale(1.8); transform-origin: top left; width: 180%; height: auto; margin-bottom: 150px;">
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '40px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 200, 'rankSpacing': 300, 'curve': 'basis', 'padding': 40}}}%%
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '36px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 180, 'rankSpacing': 250, 'curve': 'basis', 'padding': 35}}}%%
 graph TD
     %% Define enhanced node styles
     classDef hardware fill:#E3F2FD,stroke:#0D47A1,stroke-width:6px,color:#000000
     classDef hypervisor fill:#F3E5F5,stroke:#4A148C,stroke-width:6px,color:#000000
     classDef guest fill:#E8F5E9,stroke:#1B5E20,stroke-width:6px,color:#000000
-    classDef component fill:#FFF3E0,stroke:#E65100,stroke-width:5px,color:#000000
+    classDef security fill:#FFEBEE,stroke:#B71C1C,stroke-width:5px,color:#000000
+    classDef mgmt fill:#F1F8E9,stroke:#33691E,stroke-width:5px,color:#000000
 
     subgraph "HARDWARE LAYER"
-        CPU[<font size=8><b>CPU CORES</b></font><br/><font size=7>Multi-core Processor</font>]:::hardware
-        MMU[<font size=8><b>MEMORY MANAGEMENT UNIT</b></font><br/><font size=7>MMU</font>]:::hardware
-        Devices[<font size=8><b>PHYSICAL DEVICES</b></font><br/><font size=7>I/O Devices</font>]:::hardware
+        subgraph "Processor Subsystem"
+            CPU[<font size=8><b>CPU CORES</b></font><br/><font size=7>Multi-core</font>]:::hardware
+            MMU[<font size=8><b>MMU</b></font><br/><font size=7>Virtualization</font>]:::hardware
+            CACHE[<font size=8><b>CACHE</b></font><br/><font size=7>L1/L2/L3</font>]:::hardware
+        end
+
+        subgraph "I/O Subsystem"
+            PCIe[<font size=8><b>PCIe</b></font><br/><font size=7>Bus</font>]:::hardware
+            NIC[<font size=8><b>NETWORK</b></font><br/><font size=7>Ethernet</font>]:::hardware
+            STORAGE[<font size=8><b>STORAGE</b></font><br/><font size=7>NVMe/SSD</font>]:::hardware
+        end
+
+        subgraph "Interrupt System"
+            PIC[<font size=8><b>PIC/IOAPIC</b></font><br/><font size=7>IRQ</font>]:::hardware
+            TIMER[<font size=8><b>TIMERS</b></font><br/><font size=7>HPET/TSC</font>]:::hardware
+        end
     end
 
     subgraph "FERROVISOR HYPERVISOR"
-        subgraph "CORE COMPONENTS"
-            VMM[<font size=8><b>VIRTUAL MACHINE MANAGER</b></font><br/><font size=7>VMM</font>]:::component
-            Scheduler[<font size=8><b>VCPU SCHEDULER</b></font><br/><font size=7>Task Scheduler</font>]:::component
-            MemoryMgr[<font size=8><b>MEMORY MANAGER</b></font><br/><font size=7>Memory Allocation</font>]:::component
+        subgraph "Virtualization Core"
+            subgraph "VM Management"
+                VMM[<font size=8><b>VM MANAGER</b></font><br/><font size=7>Lifecycle</font>]:::hypervisor
+                VCPU[<font size=8><b>VCPU</b></font><br/><font size=7>Execution</font>]:::hypervisor
+                VMEM[<font size=8><b>VM MEMORY</b></font><br/><font size=7>EPT/NPT</font>]:::hypervisor
+            end
+
+            subgraph "Scheduler"
+                SCHED[<font size=8><b>SCHEDULER</b></font><br/><font size=7>CFS/RT</font>]:::hypervisor
+                BALANCE[<font size=8><b>LOAD BALANCER</b></font><br/><font size=7>CPU</font>]:::hypervisor
+            end
         end
 
-        subgraph "ARCHITECTURE ABSTRACTION"
-            Arch[<font size=8><b>ARCHITECTURE LAYER</b></font><br/><font size=7>ARM64 | RISC-V | x86_64</font>]:::component
+        subgraph "Device Virtualization"
+            subgraph "VirtIO Framework"
+                VIO_BLK[<font size=8><b>VIRTIO-BLK</b></font><br/><font size=7>Block</font>]:::hypervisor
+                VIO_NET[<font size=8><b>VIRTIO-NET</b></font><br/><font size=7>Network</font>]:::hypervisor
+                VIO_PCI[<font size=8><b>VIRTIO-PCI</b></font><br/><font size=7>Config</font>]:::hypervisor
+            end
+
+            subgraph "Device Passthrough"
+                VT_D[<font size=8><b>IOMMU</b></font><br/><font size=7>VT-d/AMD-Vi</font>]:::hypervisor
+                PT[<font size=8><b>PASSTHROUGH</b></font><br/><font size=7>Direct</font>]:::hypervisor
+            end
         end
 
-        subgraph "DEVICE MANAGEMENT"
-            Drivers[<font size=8><b>DEVICE DRIVERS</b></font><br/><font size=7>Hardware Drivers</font>]:::component
-            Emulators[<font size=8><b>DEVICE EMULATORS</b></font><br/><font size=7>Virtual Devices</font>]:::component
-            VirtIO[<font size=8><b>VIRTIO FRAMEWORK</b></font><br/><font size=7>Virtual I/O</font>]:::component
+        subgraph "Security & Isolation"
+            TEE[<font size=8><b>TEE</b></font><br/><font size=7>Trusted</font>]:::security
+            SE[<font size=8><b>SESV</b></font><br/><font size=7>Security</font>]:::security
+            SVM[<font size=8><b>SVM</b></font><br/><font size=7>Memory</font>]:::security
+        end
+    end
+
+    subgraph "MANAGEMENT LAYER"
+        subgraph "Control Plane"
+            API[<font size=8><b>REST API</b></font><br/><font size=7>Management</font>]:::mgmt
+            CLI[<font size=8><b>CLI</b></font><br/><font size=7>ferrovisor</font>]:::mgmt
+            WEB[<font size=8><b>WEB UI</b></font><br/><font size=7>Dashboard</font>]:::mgmt
         end
 
-        subgraph "VIRTUALIZATION SUPPORT"
-            HExt[<font size=8><b>H-EXTENSION SUPPORT</b></font><br/><font size=7>Hardware Virtualization</font>]:::component
-            TwoStage[<font size=8><b>TWO-STAGE TRANSLATION</b></font><br/><font size=7>Address Translation</font>]:::component
-            TrapHandler[<font size=8><b>TRAP HANDLER</b></font><br/><font size=7>Exception Handler</font>]:::component
-        end
-
-        subgraph "DEBUG & MONITORING"
-            Debug[<font size=8><b>DEBUG SUPPORT</b></font><br/><font size=7>Debug Interface</font>]:::component
-            Tracer[<font size=8><b>EVENT TRACER</b></font><br/><font size=7>Event Logging</font>]:::component
-            Profiler[<font size=8><b>PERFORMANCE PROFILER</b></font><br/><font size=7>Performance Monitor</font>]:::component
+        subgraph "Monitoring"
+            METRICS[<font size=8><b>PROMETHEUS</b></font><br/><font size=7>Metrics</font>]:::mgmt
+            LOGS[<font size=8><b>LOGGING</b></font><br/><font size=7>ELK</font>]:::mgmt
+            TRACE[<font size=8><b>TRACING</b></font><br/><font size=7>Jaeger</font>]:::mgmt
         end
     end
 
     subgraph "GUEST VIRTUAL MACHINES"
-        VM1[<font size=8><b>GUEST VM 1</b></font><br/><font size=7>Linux System</font>]:::guest
-        VM2[<font size=8><b>GUEST VM 2</b></font><br/><font size=7>RTOS System</font>]:::guest
-        VM3[<font size=8><b>GUEST VM 3</b></font><br/><font size=7>Bare-metal System</font>]:::guest
+        subgraph "Linux Guests"
+            LINUX[<font size=8><b>LINUX</b></font><br/><font size=7>5.x/6.x</font>]:::guest
+            K8S[<font size=8><b>KUBERNETES</b></font><br/><font size=7>Clusters</font>]:::guest
+        end
+
+        subgraph "Other Guests"
+            WIN[<font size=8><b>WINDOWS</b></font><br/><font size=7>Server</font>]:::guest
+            BSD[<font size=8><b>BSD</b></font><br/><font size=7>FreeBSD</font>]:::guest
+        end
     end
 
-    %% Enhanced connections with larger labels
-    CPU -.->|<font size=7>Control</font>| VMM
-    MMU -.->|<font size=7>Manage</font>| MemoryMgr
-    Devices -.->|<font size=7>Access</font>| Drivers
+    %% Hardware to Hypervisor
+    CPU -->|Execute| VCPU
+    MMU -->|Translate| VMEM
+    PCIe -->|Access| VT_D
+    NIC -->|Virtualize| VIO_NET
+    STORAGE -->|Virtualize| VIO_BLK
+    PIC -->|Inject| VCPU
+    TIMER -->|Schedule| SCHED
 
-    VMM -->|<font size=7>Manages</font>| VM1
-    VMM -->|<font size=7>Manages</font>| VM2
-    VMM -->|<font size=7>Manages</font>| VM3
+    %% Hypervisor Internal
+    VMM -->|Create| VCPU
+    VMM -->|Allocate| VMEM
+    SCHED -->|Balance| BALANCE
+    BALANCE -->|Schedule| VCPU
+    VIO_BLK -->|Emulate| STORAGE
+    VIO_NET -->|Emulate| NIC
+    VT_D -->|Passthrough| PT
+    TEE -->|Protect| SVM
+    SE -->|Enforce| TEE
 
-    Arch -->|<font size=7>Abstract</font>| VMM
-    Arch -->|<font size=7>Support</font>| HExt
-    Arch -->|<font size=7>Support</font>| TwoStage
+    %% Management
+    API -->|Control| VMM
+    CLI -->|Command| API
+    WEB -->|Display| API
+    METRICS -->|Collect| VMM
+    LOGS -->|Record| API
+    TRACE -->|Follow| VCPU
 
-    Drivers -->|<font size=7>Drives</font>| Emulators
-    Drivers -->|<font size=7>Standard</font>| VirtIO
+    %% Guests
+    VCPU -->|Run| LINUX
+    VCPU -->|Run| K8S
+    VCPU -->|Run| WIN
+    VCPU -->|Run| BSD
+```
 
-    MemoryMgr -->|<font size=7>Virtualize</font>| TwoStage
-    VMM -->|<font size=7>Schedule</font>| Scheduler
-    Scheduler -->|<font size=7>Allocate</font>| VM1
-    Scheduler -->|<font size=7>Allocate</font>| VM2
-    Scheduler -->|<font size=7>Allocate</font>| VM3
+</div>
 
-    TrapHandler -->|<font size=7>Handle</font>| HExt
-    Debug -->|<font size=7>Debug</font>| VMM
-    Tracer -->|<font size=7>Trace</font>| VMM
-    Profiler -->|<font size=7>Monitor</font>| Scheduler
+## 🔧 Virtualization Core Architecture
+
+<div style="transform: scale(1.8); transform-origin: top left; width: 180%; height: auto; margin-bottom: 150px;">
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '34px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 160, 'rankSpacing': 220, 'curve': 'basis', 'padding': 30}}}%%
+graph TD
+    %% Define node styles
+    classDef exec fill:#E3F2FD,stroke:#0D47A1,stroke-width:5px,color:#000000
+    classDef memory fill:#F3E5F5,stroke:#4A148C,stroke-width:5px,color:#000000
+    classDef io fill:#E8F5E9,stroke:#1B5E20,stroke-width:5px,color:#000000
+    classDef control fill:#FFF3E0,stroke:#E65100,stroke-width:5px,color:#000000
+
+    subgraph "EXECUTION ENGINE"
+        subgraph "VCPU Management"
+            VCPU_CTX[<font size=7><b>VCPU CONTEXT</b></font><br/><font size=6>State</font>]:::exec
+            VCPU_RUN[<font size=7><b>VMEXIT HANDLER</b></font><br/><font size=6>Exit</font>]:::exec
+            VCPU_VMCS[<font size=7><b>VMCS/VMCB</b></font><br/><font size=6>Controls</font>]:::exec
+        end
+
+        subgraph "Instruction Emulation"
+            EMU[<font size=7><b>EMULATOR</b></font><br/><font size=6>Instructions</font>]:::exec
+            MMIO[<font size=7><b>MMIO HANDLER</b></font><br/><font size=6>I/O</font>]:::exec
+            PORTIO[<font size=7><b>PORT I/O</b></font><br/><font size=6>PIO</font>]:::exec
+        end
+    end
+
+    subgraph "MEMORY MANAGEMENT"
+        subgraph "EPT/NPT Management"
+            EPT[<font size=7><b>EPT/NPT</b></font><br/><font size=6>L2</font>]:::memory
+            PAGING[<font size=7><b>2-Stage Paging</b></font><br/><font size=6>Translation</font>]:::memory
+            HPT[<font size=7><b>HOST PAGING</b></font><br/><font size=6>L1</font>]:::memory
+        end
+
+        subgraph "Memory Pools"
+            POOL[<font size=7><b>MEM POOL</b></font><br/><font size=6>Allocator</font>]:::memory
+            OVERCOMMIT[<font size=7><b>OVERCOMMIT</b></font><br/><font size=6>Balloon</font>]:::memory
+            HUGE[<font size=7><b>HUGE PAGES</b></font><br/><font size=6>1GB/2MB</font>]:::memory
+        end
+    end
+
+    subgraph "I/O VIRTUALIZATION"
+        subgraph "VirtIO Backend"
+            VIO_QUEUE[<font size=7><b>VIRTQUEUE</b></font><br/><font size=6>Rings</font>]:::io
+            VIO_IRQ[<font size=7><b>IRQ INJECTION</b></font><br/><font size=6>MSI-X</font>]:::io
+            VIO_CFG[<font size=7><b>CONFIG SPACE</b></font><br/><font size=6>PCI</font>]:::io
+        end
+
+        subgraph "Device Models"
+            NET_DEV[<font size=7><b>NET MODEL</b></font><br/><font size=6>e1000</font>]:::io
+            BLK_DEV[<font size=7><b>BLK MODEL</b></font><br/><font size=6>AHCI</font>]:::io
+            GPU_DEV[<font size=7><b>GPU MODEL</b></font><br/><font size=6>VFIO</font>]:::io
+        end
+    end
+
+    subgraph "CONTROL PLANE"
+        subgraph "VM Lifecycle"
+            CREATE[<font size=7><b>VM CREATE</b></font><br/><font size=6>Init</font>]:::control
+            DESTROY[<font size=7><b>VM DESTROY</b></font><br/><font size=6>Cleanup</font>]:::control
+            PAUSE[<font size=7><b>VM PAUSE</b></font><br/><font size=6>Stop</font>]:::control
+            RESUME[<font size=7><b>VM RESUME</b></font><br/><font size=6>Start</font>]:::control
+        end
+
+        subgraph "Event Manager"
+            EVT[<font size=7><b>EVENT QUEUE</b></font><br/><font size=6>Handler</font>]:::control
+            NOTIFY[<font size=7><b>NOTIFICATIONS</b></font><br/><font size=6>Events</font>]:::control
+            CALLBACK[<font size=7><b>CALLBACKS</b></font><br/><font size=6>Hooks</font>]:::control
+        end
+    end
+
+    %% Execution flows
+    VCPU_CTX -->|Enter| VCPU_RUN
+    VCPU_RUN -->|Exit| EMU
+    EMU -->|MMIO| MMIO
+    EMU -->|PIO| PORTIO
+    VCPU_VMCS -->|Configure| VCPU_CTX
+
+    %% Memory flows
+    HPT -->|Translate| PAGING
+    PAGING -->|Stage 2| EPT
+    POOL -->|Allocate| HUGE
+    OVERCOMMIT -->|Manage| POOL
+
+    %% I/O flows
+    VIO_QUEUE -->|Process| NET_DEV
+    VIO_QUEUE -->|Process| BLK_DEV
+    VIO_IRQ -->|Inject| VCPU_CTX
+    VIO_CFG -->|Configure| GPU_DEV
+
+    %% Control flows
+    CREATE -->|Initialize| VCPU_CTX
+    PAUSE -->|Stop| VCPU_RUN
+    RESUME -->|Start| VCPU_RUN
+    DESTROY -->|Cleanup| POOL
+    EVT -->|Trigger| CALLBACK
+    NOTIFY -->|Send| EVT
+```
+
+</div>
+
+## 🌐 Architecture Abstraction Layer
+
+<div style="transform: scale(1.8); transform-origin: top left; width: 180%; height: auto; margin-bottom: 150px;">
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '34px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 160, 'rankSpacing': 220, 'curve': 'basis', 'padding': 30}}}%%
+graph TB
+    %% Define node styles
+    classDef riscv fill:#FFE0B2,stroke:#E65100,stroke-width:5px,color:#000000
+    classDef arm fill:#E1F5FE,stroke:#0277BD,stroke-width:5px,color:#000000
+    classDef x86 fill:#F3E5F5,stroke:#7B1FA2,stroke-width:5px,color:#000000
+    classDef common fill:#E8F5E9,stroke:#388E3C,stroke-width:5px,color:#000000
+
+    subgraph "RISC-V ARCHITECTURE"
+        subgraph "H-Extension"
+            HS_MODE[<font size=7><b>HS-Mode</b></font><br/><font size=6>Hypervisor</font>]:::riscv
+            VS_MODE[<font size=7><b>VS-Mode</b></font><br/><font size=6>Guest</font>]:::riscv
+            HGATP[<font size=7><b>HGATP</b></font><br/><font size=6>Guest PT</font>]:::riscv
+        end
+
+        subgraph "Virtualization CSRs"
+            HVIP[<font size=7><b>HVIP</b></font><br/><font size=6>Interrupts</font>]:::riscv
+            HTVAL[<font size=7><b>HTVAL</b></font><br/><font size=6>Trap Value</font>]:::riscv
+            HSTATUS[<font size=7><b>HSTATUS</b></font><br/><font size=6>Status</font>]:::riscv
+        end
+
+        subgraph "SBI Integration"
+            SBI_CALL[<font size=7><b>SBI CALLS</b></font><br/><font size=6>Services</font>]:::riscv
+        end
+    end
+
+    subgraph "ARM64 ARCHITECTURE"
+        subgraph "Virtualization"
+            EL2[<font size=7><b>EL2</b></font><br/><font size=6>Hypervisor</font>]:::arm
+            EL1[<font size=7><b>EL1</b></font><br/><font size=6>Guest OS</font>]:::arm
+            VHE[<font size=7><b>VHE</b></font><br/><font size=6>Host Ext</font>]:::arm
+        end
+
+        subgraph "Virtualization Extensions"
+            HCR_EL2[<font size=7><b>HCR_EL2</b></font><br/><font size=6>Control</font>]:::arm
+            VTCR_EL2[<font size=7><b>VTCR_EL2</b></font><br/><font size=6>Translation</font>]:::arm
+            VMPIDR_EL2[<font size=7><b>VMPIDR_EL2</b></font><br/><font size=6>CPU ID</font>]:::arm
+        end
+
+        subgraph "GIC Virtualization"
+            VGIC[<font size=7><b>VGIC</b></font><br/><font size=6>Interrupts</font>]:::arm
+            GICV[<font size=7><b>GICV</b></font><br/><font size=6>Virtual</font>]:::arm
+        end
+    end
+
+    subgraph "X86_64 ARCHITECTURE"
+        subgraph "VT-x / VMX"
+            VMX_ROOT[<font size=7><b>VMX Root</b></font><br/><font size=6>Hypervisor</font>]:::x86
+            VMX_NON[<font size=7><b>VMX Non-Root</b></font><br/><font size=6>Guest</font>]:::x86
+            VMCS[<font size=7><b>VMCS</b></font><br/><font size=6>Controls</font>]:::x86
+        end
+
+        subgraph "Extended Page Tables"
+            EPT[<font size=7><b>EPT</b></font><br/><font size=6>L2 Translation</font>]:::x86
+            EPTP[<font size=7><b>EPTP</b></font><br/><font size=6>Pointer</font>]:::x86
+        end
+
+        subgraph "VM Exit Reasons"
+            EXIT_REASON[<font size=7><b>EXIT REASONS</b></font><br/><font size=6>Handler</font>]:::x86
+        end
+    end
+
+    subgraph "COMMON ABSTRACTION LAYER"
+        subgraph "VM Operations"
+            VM_CREATE[<font size=7><b>VM CREATE</b></font><br/><font size=6>Generic</font>]:::common
+            VM_DESTROY[<font size=7><b>VM DESTROY</b></font><br/><font size=6>Generic</font>]:::common
+        end
+
+        subgraph "Memory Abstraction"
+            MEM_MAP[<font size=7><b>MEM MAP</b></font><br/><font size=6>Generic</font>]:::common
+            MEM_PROTECT[<font size=7><b>MEM PROTECT</b></font><br/><font size=6>Generic</font>]:::common
+        end
+
+        subgraph "CPU Operations"
+            CPU_INIT[<font size=7><b>CPU INIT</b></font><br/><font size=6>Generic</font>]:::common
+            CPU_SWITCH[<font size=7><b>CONTEXT SWITCH</b></font><br/><font size=6>Generic</font>]:::common
+        end
+
+        subgraph "Interrupt Handling"
+            INJ_IRQ[<font size=7><b>INJECT IRQ</b></font><br/><font size=6>Generic</font>]:::common
+            MASK_IRQ[<font size=7><b>MASK IRQ</b></font><br/><font size=6>Generic</font>]:::common
+        end
+    end
+
+    %% RISC-V to Common
+    HS_MODE -->|Abstract| VM_CREATE
+    VS_MODE -->|Abstract| VM_DESTROY
+    HGATP -->|Abstract| MEM_MAP
+    HVIP -->|Abstract| INJ_IRQ
+    SBI_CALL -->|Use| CPU_INIT
+
+    %% ARM to Common
+    EL2 -->|Abstract| VM_CREATE
+    EL1 -->|Abstract| VM_DESTROY
+    VHE -->|Abstract| CPU_SWITCH
+    VGIC -->|Abstract| INJ_IRQ
+    HCR_EL2 -->|Abstract| MEM_PROTECT
+
+    %% x86 to Common
+    VMX_ROOT -->|Abstract| VM_CREATE
+    VMX_NON -->|Abstract| VM_DESTROY
+    VMCS -->|Abstract| CPU_SWITCH
+    EPT -->|Abstract| MEM_MAP
+    EXIT_REASON -->|Abstract| INJ_IRQ
+```
+
+</div>
+
+## 🚀 Device Virtualization Architecture
+
+<div style="transform: scale(1.8); transform-origin: top left; width: 180%; height: auto; margin-bottom: 150px;">
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '34px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 160, 'rankSpacing': 220, 'curve': 'basis', 'padding': 30}}}%%
+graph TD
+    %% Define node styles
+    classDef virtio fill:#E3F2FD,stroke:#0D47A1,stroke-width:5px,color:#000000
+    classDef passthrough fill:#F3E5F5,stroke:#4A148C,stroke-width:5px,color:#000000
+    classDef emulation fill:#E8F5E9,stroke:#1B5E20,stroke-width:5px,color:#000000
+    classDef backend fill:#FFF3E0,stroke:#E65100,stroke-width:5px,color:#000000
+
+    subgraph "VIRTIO FRAMEWORK"
+        subgraph "Frontend (Guest View)"
+            VIO_CFG[<font size=7><b>CONFIG SPACE</b></font><br/><font size=6>PCI Config</font>]:::virtio
+            VIO_QUEUE[<font size=7><b>VIRTQUEUES</b></font><br/><font size=6>3 Queues</font>]:::virtio
+            VIO_IRQ[<font size=7><b>IRQ LINE</b></font><br/><font size=6>MSI-X</font>]:::virtio
+        end
+
+        subgraph "VirtIO Device Types"
+            VIO_BLK_FE[<font size=7><b>VIRTIO-BLK</b></font><br/><font size=6>Block</font>]:::virtio
+            VIO_NET_FE[<font size=7><b>VIRTIO-NET</b></font><br/><font size=6>Network</font>]:::virtio
+            VIO_BALLOON[<font size=7><b>VIRTIO-BALLOON</b></font><br/><font size=6>Balloon</font>]:::virtio
+            VIO_CONSOLE[<font size=7><b>VIRTIO-CONSOLE</b></font><br/><font size=6>Console</font>]:::virtio
+        end
+    end
+
+    subgraph "DEVICE PASSTHROUGH"
+        subgraph "IOMMU/VT-d"
+            IOMMU[<font size=7><b>IOMMU</b></font><br/><font size=6>VT-d</font>]:::passthrough
+            MAP[<font size=7><b>IOMMU MAP</b></font><br/><font size=6>Mapping</font>]:::passthrough
+            CACHE[<font size=7><b>IOTLB</b></font><br/><font size=6>Cache</font>]:::passthrough
+        end
+
+        subgraph "Direct Assignment"
+            PF[<font size=7><b>PCI DEVICE</b></font><br/><font size=6>Physical</font>]:::passthrough
+            VF[<font size=7><b>SR-IOV VF</b></font><br/><font size=6>Virtual</font>]:::passthrough
+            GPU[<font size=7><b>GPU</b></font><br/><font size=6>Direct</font>]:::passthrough
+        end
+    end
+
+    subgraph "DEVICE EMULATION"
+        subgraph "Legacy Devices"
+            E1000[<font size=7><b>E1000</b></font><br/><font size=6>Network</font>]:::emulation
+            AHCI[<font size=7><b>AHCI</b></font><br/><font size=6>SATA</font>]:::emulation
+            VGA[<font size=7><b>VGA</b></font><br/><font size=6>Graphics</font>]:::emulation
+        end
+
+        subgraph "PCI Bridge"
+            BRIDGE[<font size=7><b>PCI BRIDGE</b></font><br/><font size=6>Root</font>]:::emulation
+            BUS[<font size=7><b>PCI BUS</b></font><br/><font size=6>Topology</font>]:::emulation
+        end
+    end
+
+    subgraph "BACKEND IMPLEMENTATIONS"
+        subgraph "Block Backend"
+            TAP[<font size=7><b>TAP DISK</b></font><br/><font size=6>Raw</font>]:::backend
+            QCOW2[<font size=7><b>QCOW2</b></font><br/><font size=6>Format</font>]:::backend
+            LVM[<font size=7><b>LVM</b></font><br/><font size=6>Volumes</font>]:::backend
+        end
+
+        subgraph "Network Backend"
+            TAP_NET[<font size=7><b>TAP NET</b></font><br/><font size=6>Bridge</font>]:::backend
+            VHOST[<font size=7><b>VHOST</b></font><br/><font size=6>Fast</font>]:::backend
+            DPDK[<font size=7><b>DPDK</b></font><br/><font size=6>Userspace</font>]:::backend
+        end
+
+        subgraph "Host Integration"
+            THREAD_POOL[<font size=7><b>THREAD POOL</b></font><br/><font size=6>Workers</font>]:::backend
+            EVENTFD[<font size=7><b>EVENTFD</b></font><br/><font size=6>Events</font>]:::backend
+            IO_URING[<font size=7><b>IO_URING</b></font><br/><font size=6>Async</font>]:::backend
+        end
+    end
+
+    %% VirtIO flows
+    VIO_BLK_FE -->|Queue| VIO_QUEUE
+    VIO_NET_FE -->|IRQ| VIO_IRQ
+    VIO_QUEUE -->|Process| TAP
+    VIO_QUEUE -->|Process| VHOST
+    VIO_CFG -->|Configure| BRIDGE
+
+    %% Passthrough flows
+    PF -->|Map| IOMMU
+    VF -->|Cache| IOTLB
+    GPU -->|Direct| MAP
+    IOMMU -->|Protect| MAP
+
+    %% Emulation flows
+    E1000 -->|Backend| TAP_NET
+    AHCI -->|Backend| TAP
+    BRIDGE -->|Connect| BUS
+
+    %% Backend flows
+    TAP -->|Read/Write| QCOW2
+    TAP_NET -->|Forward| DPDK
+    THREAD_POOL -->|Execute| IO_URING
+    EVENTFD -->|Notify| THREAD_POOL
+```
+
+</div>
+
+## 🔒 Security Architecture
+
+<div style="transform: scale(1.8); transform-origin: top left; width: 180%; height: auto; margin-bottom: 150px;">
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '34px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 160, 'rankSpacing': 220, 'curve': 'basis', 'padding': 30}}}%%
+graph TD
+    %% Define node styles
+    classDef tpm fill:#E3F2FD,stroke:#0D47A1,stroke-width:5px,color:#000000
+    classDef tee fill:#F3E5F5,stroke:#4A148C,stroke-width:5px,color:#000000
+    classDef isolation fill:#E8F5E9,stroke:#1B5E20,stroke-width:5px,color:#000000
+    classDef crypto fill:#FFF3E0,stroke:#E65100,stroke-width:5px,color:#000000
+
+    subgraph "ROOT OF TRUST"
+        subgraph "TPM 2.0"
+            TPM[<font size=7><b>TPM CHIP</b></font><br/><font size=6>Hardware</font>]:::tpm
+            PCR[<font size=7><b>PCRs</b></font><br/><font size=6>Measure</font>]:::tpm
+            ATTEST[<font size=7><b>ATTESTATION</b></font><br/><font size=6>Remote</font>]:::tpm
+        end
+
+        subgraph "Secure Boot"
+            BOOT[<font size=7><b>SECURE BOOT</b></font><br/><font size=6>UEFI</font>]:::tpm
+            VERIFY[<font size=7><b>VERIFY</b></font><br/><font size=6>Signature</font>]:::tpm
+            KEYS[<font size=7><b>KEYS</b></font><br/><font size=6>Trust</font>]:::tpm
+        end
+    end
+
+    subgraph "TRUSTED EXECUTION ENVIRONMENT"
+        subgraph "SEV/SGX"
+            SEV[<font size=7><b>SEV/SEV-ES</b></font><br/><font size=6>Memory</font>]:::tee
+            SGX[<font size=7><b>SGX/TDX</b></font><br/><font size=6>Enclave</font>]:::tee
+            ENCRYPT[<font size=7><b>ENCRYPTION</b></font><br/><font size=6>AES-GCM</font>]:::tee
+        end
+
+        subgraph "Isolated Worlds"
+            SEC_WORLD[<font size=7><b>SECURE WORLD</b></font><br/><font size=6>TrustZone</font>]:::tee
+            NORMAL[<font size=7><b>NORMAL WORLD</b></font><br/><font size=6>Normal</font>]:::tee
+            SMC[<font size=7><b>SMC/GATE</b></font><br/><font size=6>Transition</font>]:::tee
+        end
+    end
+
+    subgraph "MEMORY ISOLATION"
+        subgraph "EPT/NPT Protection"
+            EPT_R[<font size=7><b>EPT READ</b></font><br/><font size=6>RX</font>]:::isolation
+            EPT_W[<font size=7><b>EPT WRITE</b></font><br/><font size=6>W</font>]:::isolation
+            EPT_X[<font size=7><b>EPT EXEC</b></font><br/><font size=6>X</font>]:::isolation
+        end
+
+        subgraph "Shadow Tables"
+            SHADOW[<font size=7><b>SHADOW PT</b></font><br/><font size=6>Hidden</font>]:::isolation
+            MERGE[<font size=7><b>MERGE</b></font><br/><font size=6>Combine</font>]:::isolation
+            SPLIT[<font size=7><b>SPLIT</b></font><br/><font size=6>Separate</font>]:::isolation
+        end
+    end
+
+    subgraph "CRYPTOGRAPHY & KEYS"
+        subgraph "Key Management"
+            HSM[<font size=7><b>HSM</b></font><br/><font size=6>Module</font>]:::crypto
+            KMS[<font size=7><b>KMS</b></font><br/><font size=6>Service</font>]:::crypto
+            KEY_ROT[<font size=7><b>ROTATION</b></font><br/><font size=6>Auto</font>]:::crypto
+        end
+
+        subgraph "Encryption"
+            VM_ENC[<font size=7><b>VM DISK</b></font><br/><font size=6>LUKS</font>]:::crypto
+            NET_ENC[<font size=7><b>NETWORK</b></font><br/><font size=6>TLS</font>]:::crypto
+            MIG_ENC[<font size=7><b>MIGRATION</b></font><br/><font size=6>Encrypted</font>]:::crypto
+        end
+    end
+
+    %% Trust flows
+    TPM -->|Measure| PCR
+    BOOT -->|Verify| KEYS
+    PCR -->|Attest| ATTEST
+
+    %% TEE flows
+    SEV -->|Encrypt| ENCRYPT
+    SGX -->|Isolate| SEC_WORLD
+    SMC -->|Transition| NORMAL
+
+    %% Isolation flows
+    EPT_R -->|Protect| SHADOW
+    EPT_W -->|Control| MERGE
+    EPT_X -->|Execute| SPLIT
+
+    %% Crypto flows
+    HSM -->|Provide| KEY_ROT
+    KMS -->|Store| VM_ENC
+    KEY_ROT -->|Update| NET_ENC
+    MIG_ENC -->|Secure| ATTEST
+```
+
+</div>
+
+## 🏗️ Overall Architecture Summary
+
+<div style="transform: scale(1.6); transform-origin: top left; width: 160%; height: auto; margin-bottom: 120px;">
+
+```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '32px', 'primaryColor': '#ffffff', 'primaryTextColor': '#000000', 'primaryBorderColor': '#000000', 'lineColor': '#000000', 'sectionBkgColor': '#f8f9fa', 'altSectionBkgColor': '#ffffff', 'gridColor': '#dee2e6'}, 'flowchart': {'nodeSpacing': 140, 'rankSpacing': 200, 'curve': 'basis', 'padding': 30}}}%%
+graph TB
+    %% Define node styles
+    classDef hw fill:#E3F2FD,stroke:#0D47A1,stroke-width:5px,color:#000000
+    classDef hv fill:#F3E5F5,stroke:#4A148C,stroke-width:5px,color:#000000
+    classDef vm fill:#E8F5E9,stroke:#1B5E20,stroke-width:5px,color:#000000
+
+    HW[<font size=7><b>HARDWARE</b></font><br/><font size=6>CPU/Memory/Devices</font>]:::hw
+
+    subgraph "FERROVISOR HYPERVISOR"
+        CORE[<font size=7><b>VIRTUALIZATION CORE</b></font><br/><font size=6>VM/VCPU/Memory</font>]:::hv
+        DEV[<font size=7><b>DEVICE VIRTUALIZATION</b></font><br/><font size=6>VirtIO/Passthrough</font>]:::hv
+        ARCH[<font size=7><b>ARCH ABSTRACTION</b></font><br/><font size=6>RISC-V/ARM64/x86</font>]:::hv
+        SEC[<font size=7><b>SECURITY LAYER</b></font><br/><font size=6>TEE/TPM/IOMMU</font>]:::hv
+    end
+
+    subgraph "GUEST VMS"
+        VM1[<font size=7><b>GUEST VM 1</b></font><br/><font size=6>Linux/Kubernetes</font>]:::vm
+        VM2[<font size=7><b>GUEST VM 2</b></font><br/><font size=6>Windows/BSD</font>]:::vm
+        VM3[<font size=7><b>GUEST VM 3</b></font><br/><font size=6>RTOS/Bare-metal</font>]:::vm
+    end
+
+    HW --> CORE
+    CORE --> VM1
+    CORE --> VM2
+    CORE --> VM3
+    ARCH --> CORE
+    DEV --> CORE
+    SEC --> CORE
 ```
 
 </div>
