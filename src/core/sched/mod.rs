@@ -161,39 +161,54 @@ pub fn init() -> Result<()> {
     scheduler::init()
 }
 
-/// Get the current thread
-pub fn current_thread() -> &'static Thread {
+/// Get the current thread ID
+pub fn current_thread_id() -> Option<ThreadId> {
     scheduler::current_thread()
 }
 
 /// Schedule the next thread to run
-pub fn schedule() -> &'static Thread {
-    scheduler::schedule()
+pub fn schedule(cpu_id: usize) -> Result<Option<ThreadId>, crate::Error> {
+    scheduler::schedule(cpu_id)
 }
 
 /// Block the current thread
-pub fn block_current() {
-    scheduler::block_current()
+pub fn block_current(cpu_id: usize) -> Result<(), crate::Error> {
+    scheduler::block_current(cpu_id)
 }
 
 /// Unblock a thread
-pub fn unblock_thread(thread: NonNull<Thread>) {
-    scheduler::unblock_thread(thread)
+pub fn unblock_thread(tid: ThreadId) -> Result<(), crate::Error> {
+    scheduler::unblock_thread(tid)
 }
 
 /// Yield the current CPU time slice
-pub fn yield_current() {
-    scheduler::yield_current()
+pub fn yield_current() -> Result<(), crate::Error> {
+    let cpu_id = crate::core::cpu_id();
+    scheduler::yield_current(cpu_id)
 }
 
-/// Add a thread to the scheduler
-pub fn add_thread(thread: Thread) -> ThreadHandle {
-    scheduler::add_thread(thread)
+/// Create a new thread
+pub fn create_thread(
+    vm_id: Option<crate::core::vmm::VmId>,
+    vcpu_id: Option<crate::core::vmm::VcpuId>,
+    priority: Priority,
+) -> Result<ThreadId, crate::Error> {
+    scheduler::create_thread(vm_id, vcpu_id, priority)
 }
 
-/// Remove a thread from the scheduler
-pub fn remove_thread(handle: ThreadHandle) {
-    scheduler::remove_thread(handle)
+/// Destroy a thread
+pub fn destroy_thread(tid: ThreadId) -> Result<(), crate::Error> {
+    scheduler::destroy_thread(tid)
+}
+
+/// Handle scheduler tick
+pub fn handle_tick() -> Result<(), crate::Error> {
+    scheduler::handle_tick()
+}
+
+/// Get scheduler statistics
+pub fn get_stats() -> scheduler::SchedulerStats {
+    scheduler::get_stats()
 }
 
 use core::ptr::NonNull;
