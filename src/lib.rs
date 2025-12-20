@@ -72,10 +72,16 @@ pub enum Error {
     PermissionDenied,
     /// Resource busy
     ResourceBusy,
+    /// Resource unavailable
+    ResourceUnavailable,
     /// Timeout
     Timeout,
     /// Not implemented
     NotImplemented,
+    /// Not initialized
+    NotInitialized,
+    /// Invalid state
+    InvalidState,
     /// Architecture-specific error
     ArchError(arch::Error),
     /// Core error
