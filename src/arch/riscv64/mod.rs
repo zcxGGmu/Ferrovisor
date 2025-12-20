@@ -7,6 +7,7 @@
 //! - Virtualization extensions (H Extension)
 //! - SMP support
 //! - Device tree support
+//! - Debug support
 
 pub mod cpu;
 pub mod mmu;
@@ -14,6 +15,7 @@ pub mod interrupt;
 pub mod virtualization;
 pub mod smp;
 pub mod devtree;
+pub mod debug;
 pub mod platform;
 
 // Re-export key types and functions
@@ -23,6 +25,7 @@ pub use interrupt::*;
 pub use virtualization::*;
 pub use smp::*;
 pub use devtree::*;
+pub use debug::*;
 pub use platform::*;
 
 /// RISC-V 64-bit architecture version
