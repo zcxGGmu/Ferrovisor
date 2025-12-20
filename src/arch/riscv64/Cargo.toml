@@ -1,0 +1,19 @@
+[package]
+name = "ferrovisor-arch-riscv64"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "RISC-V 64-bit architecture support for Ferrovisor"
+
+[dependencies]
+ferrovisor-arch = { path = "../../arch" }
+ferrovisor-hal = { path = "../../hal" }
+ferrovisor-kernel = { path = "../../kernel" }
+ferrovisor-memory = { path = "../../memory" }
+ferrovisor-vmm = { path = "../../vmm" }
+ferrovisor-drivers = { path = "../../drivers" }
+log = { workspace = true }
+bitflags = { workspace = true }
+static_assertions = "1.1.0"
+paste = "1.0.14"
