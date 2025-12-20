@@ -2,7 +2,6 @@
 #![no_main]
 #![feature(lang_items)]
 #![feature(panic_info_message)]
-#![feature(const_fn)]
 #![feature(alloc_error_handler)]
 
 //! Ferrovisor - A Rust-based Type-1 Hypervisor

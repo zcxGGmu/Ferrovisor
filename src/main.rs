@@ -24,7 +24,7 @@ pub extern "C" fn _start() -> ! {
             core::ptr::write_volatile(0x9000000 as *mut u8, b'B');
             core::ptr::write_volatile(0x9000000 as *mut u8, b'o');
             core::ptr::write_volatile(0x9000000 as *mut u8, b'o');
-            core::ptr::write_volatile(0x9000000 as *mut u8", b't');
+            core::ptr::write_volatile(0x9000000 as *mut u8, b't');
             core::ptr::write_volatile(0x9000000 as *mut u8, b'\n');
         }
     }

@@ -69,7 +69,7 @@ fn configure_architecture(target: &str) {
     }
 
     if cfg!(feature = "allocator") {
-        println!("cargo:rustc-cfg(feature_allocator)");
+        println!("cargo:rustc-cfg=feature_allocator");
     }
 }
 
