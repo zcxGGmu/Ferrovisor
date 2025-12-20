@@ -39,7 +39,7 @@ graph TB
         end
 
         subgraph "Architecture Abstraction"
-            Arch[Arch Layer<br/>ARM64|RISC-V|x86_64]
+            Arch["Arch Layer<br/>ARM64 | RISC-V | x86_64"]
         end
 
         subgraph "Device Management"
@@ -62,9 +62,9 @@ graph TB
     end
 
     subgraph "Guest VMs"
-        VM1[Guest VM 1<br/>Linux]
-        VM2[Guest VM 2<br/>RTOS]
-        VM3[Guest VM 3<br/>Bare-metal]
+        VM1["Guest VM 1<br/>Linux"]
+        VM2["Guest VM 2<br/>RTOS"]
+        VM3["Guest VM 3<br/>Bare-metal"]
     end
 
     CPU -.-> VMM
