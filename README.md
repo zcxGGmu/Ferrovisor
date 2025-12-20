@@ -150,18 +150,27 @@ qemu-system-aarch64 -M virt -cpu cortex-a57 -m 512M \
 
 ## Project Status
 
-This project is currently in early development. See the [REFACTOR_PLAN.md](REFACTOR_PLAN.md) for detailed progress and roadmap.
+This project is currently in early development.
+
+### Documentation
+
+See the [docs/](docs/) directory for detailed documentation:
+- [REFACTOR_PLAN.md](docs/REFACTOR_PLAN.md) - Detailed refactoring plan and roadmap
+- [STRUCTURE.md](docs/STRUCTURE.md) - Directory structure and organization guide
 
 ### Current Status
 
 - [x] Project initialization and basic structure
-- [ ] Core framework implementation
-- [ ] Architecture-specific modules
-- [ ] Virtual machine management
-- [ ] Device emulation
-- [ ] Memory management
-- [ ] Interrupt handling
-- [ ] Testing and documentation
+- [x] Core framework implementation
+- [x] Architecture-specific modules (ARM64, RISC-V, x86_64)
+- [x] Virtual machine management
+- [x] Device emulation
+- [x] Memory management
+- [x] Interrupt handling
+- [x] Device drivers
+- [x] Build system and configuration
+- [ ] Testing and validation
+- [ ] Performance optimization
 
 ## Contributing
 
