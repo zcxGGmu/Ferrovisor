@@ -23,76 +23,88 @@ Ferrovisor is a modern Type-1 hypervisor implemented in Rust that runs directly 
 
 ## Architecture
 
+<div style="font-size: 24px; line-height: 1.6;">
+
 ```mermaid
-graph TB
-    subgraph "Hardware Layer"
-        CPU[CPU Cores]
-        MMU[Memory Management Unit]
-        Devices[Physical Devices]
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Arial, sans-serif', 'fontSize': '24px', 'primaryColor': '#fff', 'primaryTextColor': '#000', 'primaryBorderColor': '#666', 'lineColor': '#666', 'sectionBkgColor': '#f5f5f5', 'altSectionBkgColor': '#fff', 'gridColor': '#ddd'}, 'flowchart': {'nodeSpacing': 100, 'rankSpacing': 150, 'curve': 'basis', 'padding': 20}}}%%
+graph TD
+    %% Define enhanced node styles
+    classDef hardware fill:#E3F2FD,stroke:#1565C0,stroke-width:4px,color:#000000
+    classDef hypervisor fill:#F3E5F5,stroke:#7B1FA2,stroke-width:4px,color:#000000
+    classDef guest fill:#E8F5E9,stroke:#388E3C,stroke-width:4px,color:#000000
+    classDef component fill:#FFF3E0,stroke:#F57C00,stroke-width:3px,color:#000000
+
+    subgraph "🖥️ 硬件层 Hardware Layer"
+        CPU[<font size="5"><b>CPU 多核处理器</b></font><br/><font size="4">CPU Cores</font>]:::hardware
+        MMU[<font size="5"><b>内存管理单元</b></font><br/><font size="4">Memory Management Unit</font>]:::hardware
+        Devices[<font size="5"><b>物理设备</b></font><br/><font size="4">Physical Devices</font>]:::hardware
     end
 
-    subgraph "Ferrovisor Hypervisor"
-        subgraph "Core Components"
-            VMM[Virtual Machine Manager]
-            Scheduler[VCPU Scheduler]
-            MemoryMgr[Memory Manager]
+    subgraph "⚙️ Ferrovisor 虚拟化层"
+        subgraph "📋 核心组件 Core Components"
+            VMM[<font size="5"><b>虚拟机管理器</b></font><br/><font size="4">Virtual Machine Manager</font>]:::component
+            Scheduler[<font size="5"><b>VCPU调度器</b></font><br/><font size="4">VCPU Scheduler</font>]:::component
+            MemoryMgr[<font size="5"><b>内存管理器</b></font><br/><font size="4">Memory Manager</font>]:::component
         end
 
-        subgraph "Architecture Abstraction"
-            Arch["Arch Layer<br/>ARM64 | RISC-V | x86_64"]
+        subgraph "🏗️ 架构抽象层 Architecture Abstraction"
+            Arch["<font size="5"><b>架构支持层</b></font><br/><font size="4">ARM64 | RISC-V | x86_64</font>"]:::component
         end
 
-        subgraph "Device Management"
-            Drivers[Device Drivers]
-            Emulators[Device Emulators]
-            VirtIO[VirtIO Framework]
+        subgraph "🔌 设备管理 Device Management"
+            Drivers[<font size="5"><b>设备驱动</b></font><br/><font size="4">Device Drivers</font>]:::component
+            Emulators[<font size="5"><b>设备模拟器</b></font><br/><font size="4">Device Emulators</font>]:::component
+            VirtIO[<font size="5"><b>VirtIO框架</b></font><br/><font size="4">VirtIO Framework</font>]:::component
         end
 
-        subgraph "Virtualization Support"
-            HExt[H-Extension Support]
-            TwoStage[Two-Stage Translation]
-            TrapHandler[Trap Handler]
+        subgraph "🔄 虚拟化支持 Virtualization Support"
+            HExt[<font size="5"><b>H扩展支持</b></font><br/><font size="4">H-Extension Support</font>]:::component
+            TwoStage[<font size="5"><b>两级地址转换</b></font><br/><font size="4">Two-Stage Translation</font>]:::component
+            TrapHandler[<font size="5"><b>陷阱处理器</b></font><br/><font size="4">Trap Handler</font>]:::component
         end
 
-        subgraph "Debug & Monitoring"
-            Debug[Debug Support]
-            Tracer[Event Tracer]
-            Profiler[Performance Profiler]
+        subgraph "🐛 调试与监控 Debug & Monitoring"
+            Debug[<font size="5"><b>调试支持</b></font><br/><font size="4">Debug Support</font>]:::component
+            Tracer[<font size="5"><b>事件追踪器</b></font><br/><font size="4">Event Tracer</font>]:::component
+            Profiler[<font size="5"><b>性能分析器</b></font><br/><font size="4">Performance Profiler</font>]:::component
         end
     end
 
-    subgraph "Guest VMs"
-        VM1["Guest VM 1<br/>Linux"]
-        VM2["Guest VM 2<br/>RTOS"]
-        VM3["Guest VM 3<br/>Bare-metal"]
+    subgraph "💻 虚拟机层 Guest VMs"
+        VM1["<font size="5"><b>虚拟机 1</b></font><br/><font size="4">Linux 操作系统</font>"]:::guest
+        VM2["<font size="5"><b>虚拟机 2</b></font><br/><font size="4">RTOS 实时系统</font>"]:::guest
+        VM3["<font size="5"><b>虚拟机 3</b></font><br/><font size="4">裸机系统</font>"]:::guest
     end
 
-    CPU -.-> VMM
-    MMU -.-> MemoryMgr
-    Devices -.-> Drivers
+    %% Enhanced connections with larger labels
+    CPU -.->|<font size="4">硬件控制</font>| VMM
+    MMU -.->|<font size="4">内存管理</font>| MemoryMgr
+    Devices -.->|<font size="4">设备访问</font>| Drivers
 
-    VMM --> VM1
-    VMM --> VM2
-    VMM --> VM3
+    VMM -->|<font size="4">管理</font>| VM1
+    VMM -->|<font size="4">管理</font>| VM2
+    VMM -->|<font size="4">管理</font>| VM3
 
-    Arch --> VMM
-    Arch --> HExt
-    Arch --> TwoStage
+    Arch -->|<font size="4">抽象层</font>| VMM
+    Arch -->|<font size="4">支持</font>| HExt
+    Arch -->|<font size="4">支持</font>| TwoStage
 
-    Drivers --> Emulators
-    Drivers --> VirtIO
+    Drivers -->|<font size="4">驱动</font>| Emulators
+    Drivers -->|<font size="4">标准</font>| VirtIO
 
-    MemoryMgr --> TwoStage
-    VMM --> Scheduler
-    Scheduler --> VM1
-    Scheduler --> VM2
-    Scheduler --> VM3
+    MemoryMgr -->|<font size="4">虚拟化</font>| TwoStage
+    VMM -->|<font size="4">调度</font>| Scheduler
+    Scheduler -->|<font size="4">分配</font>| VM1
+    Scheduler -->|<font size="4">分配</font>| VM2
+    Scheduler -->|<font size="4">分配</font>| VM3
 
-    TrapHandler --> HExt
-    Debug --> VMM
-    Tracer --> VMM
-    Profiler --> Scheduler
+    TrapHandler -->|<font size="4">处理</font>| HExt
+    Debug -->|<font size="4">调试</font>| VMM
+    Tracer -->|<font size="4">追踪</font>| VMM
+    Profiler -->|<font size="4">监控</font>| Scheduler
 ```
+
+</div>
 
 ## Key Features
 
