@@ -1,11 +1,15 @@
 //! Core hypervisor modules
 
-pub mod ferro_main;
-pub mod ferro_manager;
-pub mod ferro_vcpu;
-pub mod ferro_scheduler;
+pub mod ferro_core;
+pub mod ferro_mod;
 pub mod mm;
 pub mod irq;
 pub mod sync;
+pub mod sched;
+pub mod block;
+pub mod net;
+pub mod vio;
+pub mod vmm;
+pub mod schedalgo;
 
-pub use ferro_main::*;
+pub use ferro_core::*;
