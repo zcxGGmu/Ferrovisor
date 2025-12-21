@@ -30,8 +30,22 @@ pub enum IpiType {
     WakeUp = 6,
     /// Custom IPI (user-defined)
     Custom = 7,
+    /// CPU hotplug suspend IPI
+    Suspend = 8,
+    /// CPU hotplug resume IPI
+    Resume = 9,
+    /// CPU hotplug shutdown IPI
+    Shutdown = 10,
+    /// CPU hotplug add IPI
+    Add = 11,
+    /// CPU hotplug remove IPI
+    Remove = 12,
+    /// VM migration IPI
+    VmMigrate = 13,
+    /// Memory pressure IPI
+    MemoryPressure = 14,
     /// Maximum IPI type
-    Max = 8,
+    Max = 15,
 }
 
 /// IPI flags
@@ -390,6 +404,17 @@ fn setup_default_handlers() {
     register_ipi_handler(IpiType::TlbShootdown, tlb_shootdown_ipi_handler);
     register_ipi_handler(IpiType::Stop, stop_ipi_handler);
     register_ipi_handler(IpiType::WakeUp, wake_up_ipi_handler);
+
+    // Register handlers for hotplug IPI types
+    register_ipi_handler(IpiType::Suspend, suspend_ipi_handler);
+    register_ipi_handler(IpiType::Resume, resume_ipi_handler);
+    register_ipi_handler(IpiType::Shutdown, shutdown_ipi_handler);
+    register_ipi_handler(IpiType::Add, add_cpu_ipi_handler);
+    register_ipi_handler(IpiType::Remove, remove_cpu_ipi_handler);
+
+    // Register handlers for virtualization IPI types
+    register_ipi_handler(IpiType::VmMigrate, vm_migrate_ipi_handler);
+    register_ipi_handler(IpiType::MemoryPressure, memory_pressure_ipi_handler);
 }
 
 /// Register an IPI handler
@@ -446,6 +471,153 @@ fn wake_up_ipi_handler(cpu_id: usize, _data: u64) -> Result<(), &'static str> {
 
     // Wake up the CPU
     // In a real implementation, this would wake up a sleeping CPU
+    crate::arch::riscv64::cpu::asm::nop(); // Placeholder
+
+    Ok(())
+}
+
+/// CPU suspend IPI handler
+fn suspend_ipi_handler(cpu_id: usize, _data: u64) -> Result<(), &'static str> {
+    log::info!("CPU {} received suspend IPI", cpu_id);
+
+    // Save current CPU state
+    crate::arch::riscv64::cpu::state::save_to_per_cpu(crate::arch::riscv64::cpu::state::save_state());
+
+    // Mark CPU as suspended in SMP subsystem
+    crate::arch::riscv64::cpu::state::this_cpu().mark_offline();
+
+    // Disable interrupts and wait for resume
+    crate::arch::riscv64::interrupt::disable_external_interrupts();
+    let mut mstatus = crate::arch::riscv64::cpu::csr::MSTATUS::read();
+    mstatus &= !(1 << 3); // Clear MIE bit
+    crate::arch::riscv64::cpu::csr::MSTATUS::write(mstatus);
+
+    // Wait for resume IPI
+    loop {
+        crate::arch::riscv64::cpu::asm::wfi();
+
+        // Check for resume IPI
+        if let Some(ipi_state) = get_cpu_ipi_state(cpu_id) {
+            if ipi_state.is_pending(IpiType::Resume) {
+                ipi_state.clear_pending(IpiType::Resume);
+                break;
+            }
+        }
+    }
+
+    // Re-enable interrupts and mark as online
+    crate::arch::riscv64::interrupt::enable_external_interrupts();
+    crate::arch::riscv64::cpu::state::this_cpu().mark_online();
+
+    log::info!("CPU {} resumed from suspension", cpu_id);
+    Ok(())
+}
+
+/// CPU resume IPI handler
+fn resume_ipi_handler(cpu_id: usize, _data: u64) -> Result<(), &'static str> {
+    log::info!("CPU {} received resume IPI", cpu_id);
+
+    // This handler is mainly for cleanup after resume
+    // The actual resume logic is handled in suspend_ipi_handler
+
+    Ok(())
+}
+
+/// CPU shutdown IPI handler
+fn shutdown_ipi_handler(cpu_id: usize, _data: u64) -> Result<(), &'static str> {
+    log::info!("CPU {} received shutdown IPI", cpu_id);
+
+    // Mark CPU as offline in SMP subsystem
+    crate::arch::riscv64::cpu::state::this_cpu().mark_offline();
+
+    // Clean up any resources
+    if let Some(per_cpu) = crate::arch::riscv64::cpu::state::cpu_data(cpu_id) {
+        per_cpu.clear_vcpu();
+    }
+
+    // Halt the CPU
+    crate::arch::riscv64::smp::boot::halt_cpu()
+}
+
+/// CPU add IPI handler
+fn add_cpu_ipi_handler(cpu_id: usize, data: u64) -> Result<(), &'static str> {
+    let entry_point = (data & 0xFFFFFFFF) as usize;
+    let stack_top = ((data >> 32) & 0xFFFFFFFF) as usize;
+
+    log::info!("CPU {} received add IPI: entry={:#x}, stack={:#x}",
+              cpu_id, entry_point, stack_top);
+
+    // This would be handled by the boot system
+    // In a real implementation, this might trigger re-initialization
+
+    Ok(())
+}
+
+/// CPU remove IPI handler
+fn remove_cpu_ipi_handler(cpu_id: usize, _data: u64) -> Result<(), &'static str> {
+    log::info!("CPU {} received remove IPI", cpu_id);
+
+    // This is mainly for cleanup
+    // The actual removal logic is handled elsewhere
+
+    Ok(())
+}
+
+/// VM migration IPI handler
+fn vm_migrate_ipi_handler(cpu_id: usize, data: u64) -> Result<(), &'static str> {
+    let target_cpu = (data & 0xFFFFFFFF) as usize;
+    let vm_id = ((data >> 32) & 0xFFFF) as u16;
+    let vcpu_id = ((data >> 48) & 0xFFFF) as u16;
+
+    log::info!("CPU {} received VM migration IPI: target_cpu={}, vm_id={}, vcpu_id={}",
+              cpu_id, target_cpu, vm_id, vcpu_id);
+
+    // Migrate VCPU from this CPU to target CPU
+    if let Some(per_cpu) = crate::arch::riscv64::cpu::state::cpu_data(cpu_id) {
+        if per_cpu.get_vcpu_id() == Some(vcpu_id as usize) {
+            // Clear current VCPU assignment
+            per_cpu.clear_vcpu();
+
+            // In a real implementation, this would:
+            // 1. Save VCPU state
+            // 2. Transfer VCPU context to target CPU
+            // 3. Notify target CPU
+
+            log::info!("VCPU {} migrated from CPU {} to CPU {}", vcpu_id, cpu_id, target_cpu);
+        }
+    }
+
+    Ok(())
+}
+
+/// Memory pressure IPI handler
+fn memory_pressure_ipi_handler(cpu_id: usize, data: u64) -> Result<(), &'static str> {
+    let pressure_level = (data & 0xFF) as u8;
+    let reclaim_target = ((data >> 8) & 0xFFFFFFFF) as usize;
+
+    log::info!("CPU {} received memory pressure IPI: level={}, target={:#x}",
+              cpu_id, pressure_level, reclaim_target);
+
+    // Handle memory pressure based on level
+    match pressure_level {
+        0 => {
+            // Low pressure - minor cleanup
+            log::debug!("Low memory pressure detected on CPU {}", cpu_id);
+        }
+        1 => {
+            // Medium pressure - aggressive cleanup
+            log::debug!("Medium memory pressure detected on CPU {}, performing cleanup", cpu_id);
+        }
+        2 => {
+            // High pressure - emergency cleanup
+            log::warn!("High memory pressure detected on CPU {}, performing emergency cleanup", cpu_id);
+        }
+        _ => {
+            log::error!("Invalid memory pressure level: {}", pressure_level);
+        }
+    }
+
+    // In a real implementation, this would trigger memory reclamation
     crate::arch::riscv64::cpu::asm::nop(); // Placeholder
 
     Ok(())

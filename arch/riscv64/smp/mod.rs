@@ -16,6 +16,8 @@ pub use ipi::*;
 pub use scheduler::*;
 
 use crate::arch::riscv64::*;
+use core::sync::atomic::{AtomicUsize, AtomicU32, AtomicU64, Ordering};
+use alloc::vec::Vec;
 
 /// SMP configuration
 #[derive(Debug, Clone)]
@@ -288,6 +290,463 @@ pub fn get_cpu_load(cpu_id: usize) -> Option<f64> {
     }
 }
 
+/// Advanced multi-core boot manager
+pub struct MultiCoreBootManager {
+    /// Boot configuration
+    config: SmpConfig,
+    /// Boot statistics
+    stats: BootStatistics,
+    /// Boot state tracking
+    boot_states: [AtomicU32; crate::MAX_CPUS],
+    /// Performance monitoring
+    performance: BootPerformanceMonitor,
+}
+
+/// Boot statistics
+#[derive(Debug, Default)]
+pub struct BootStatistics {
+    /// Total boot attempts
+    pub total_attempts: AtomicUsize,
+    /// Successful boots
+    pub successful_boots: AtomicUsize,
+    /// Failed boots
+    pub failed_boots: AtomicUsize,
+    /// Total boot time in cycles
+    pub total_boot_time: AtomicU64,
+    /// Average boot time per CPU
+    pub avg_boot_time: AtomicU64,
+    /// Peak concurrent boots
+    pub peak_concurrent_boots: AtomicUsize,
+}
+
+/// Boot performance monitor
+#[derive(Debug)]
+pub struct BootPerformanceMonitor {
+    /// Boot times per CPU
+    boot_times: [AtomicU64; crate::MAX_CPUS],
+    /// Boot start times per CPU
+    boot_start_times: [AtomicU64; crate::MAX_CPUS],
+    /// CPU readiness times
+    readiness_times: [AtomicU64; crate::MAX_CPUS],
+    /// Last boot timestamp
+    last_boot_timestamp: AtomicU64,
+}
+
+impl MultiCoreBootManager {
+    /// Create new multi-core boot manager
+    pub fn new(config: SmpConfig) -> Self {
+        Self {
+            config,
+            stats: BootStatistics::default(),
+            boot_states: [const { AtomicU32::new(0) }; crate::MAX_CPUS],
+            performance: BootPerformanceMonitor {
+                boot_times: [const { AtomicU64::new(0) }; crate::MAX_CPUS],
+                boot_start_times: [const { AtomicU64::new(0) }; crate::MAX_CPUS],
+                readiness_times: [const { AtomicU64::new(0) }; crate::MAX_CPUS],
+                last_boot_timestamp: AtomicU64::new(0),
+            },
+        }
+    }
+
+    /// Initialize multi-core boot system
+    pub fn initialize(&mut self) -> Result<(), &'static str> {
+        log::info!("Initializing multi-core boot manager");
+
+        // Initialize SBI interface
+        crate::arch::riscv64::smp::sbi::init()?;
+
+        // Initialize boot system
+        crate::arch::riscv64::smp::boot::init_boot_system()?;
+
+        // Initialize IPI subsystem
+        crate::arch::riscv64::smp::ipi::init()?;
+
+        // Initialize primary CPU
+        self.initialize_primary_cpu()?;
+
+        // Initialize load balancer
+        init_load_balancer(self.config.load_balancer)?;
+
+        log::info!("Multi-core boot manager initialized");
+        Ok(())
+    }
+
+    /// Initialize primary CPU
+    fn initialize_primary_cpu(&mut self) -> Result<(), &'static str> {
+        let cpu_id = 0;
+
+        // Mark primary CPU as booting
+        self.set_cpu_state(cpu_id, CpuState::Booting);
+
+        let start_time = crate::arch::riscv64::cpu::csr::TIME::read();
+
+        // Initialize primary CPU subsystems
+        crate::arch::riscv64::cpu::state::init()?;
+        crate::arch::riscv64::mmu::init()?;
+        crate::arch::riscv64::interrupt::init()?;
+
+        // Check for virtualization support
+        if crate::arch::riscv64::virtualization::has_h_extension() {
+            crate::arch::riscv64::virtualization::init()?;
+        }
+
+        let end_time = crate::arch::riscv64::cpu::csr::TIME::read();
+        let boot_time = end_time.wrapping_sub(start_time);
+
+        // Update statistics
+        self.performance.boot_times[cpu_id].store(boot_time, Ordering::SeqCst);
+        self.stats.total_attempts.fetch_add(1, Ordering::SeqCst);
+        self.stats.successful_boots.fetch_add(1, Ordering::SeqCst);
+        self.stats.total_boot_time.fetch_add(boot_time, Ordering::SeqCst);
+
+        // Mark primary CPU as ready
+        self.set_cpu_state(cpu_id, CpuState::Running);
+        mark_cpu_online(cpu_id);
+
+        log::info!("Primary CPU {} initialized in {} cycles", cpu_id, boot_time);
+        Ok(())
+    }
+
+    /// Start secondary CPUs
+    pub fn start_secondary_cpus(&mut self) -> Result<usize, &'static str> {
+        if self.config.boot_cpus <= 1 {
+            return Ok(0);
+        }
+
+        log::info!("Starting {} secondary CPUs", self.config.boot_cpus - 1);
+
+        // Configure secondary CPU boot
+        let boot_config = crate::arch::riscv64::smp::boot::BootConfig {
+            entry_point: 0x80000000, // Would be set to actual entry point
+            stack_top: 0x90000000,
+            dtb_address: 0x41000000,
+            boot_args: 0,
+        };
+
+        crate::arch::riscv64::smp::boot::configure_secondary_boot(boot_config)?;
+
+        let start_time = crate::arch::riscv64::cpu::csr::TIME::read();
+        let mut started_count = 0;
+        let mut concurrent_boots = 0;
+
+        // Start secondary CPUs in parallel if possible
+        for cpu_id in 1..self.config.boot_cpus.min(crate::MAX_CPUS) {
+            // Mark CPU as booting
+            self.set_cpu_state(cpu_id, CpuState::Booting);
+            self.performance.boot_start_times[cpu_id].store(start_time, Ordering::SeqCst);
+            concurrent_boots += 1;
+
+            // Start the CPU
+            match crate::arch::riscv64::smp::boot::start_secondary_cpu(cpu_id) {
+                Ok(_) => {
+                    started_count += 1;
+                }
+                Err(e) => {
+                    log::error!("Failed to start CPU {}: {}", cpu_id, e);
+                    self.set_cpu_state(cpu_id, CpuState::Failed);
+                    self.stats.failed_boots.fetch_add(1, Ordering::SeqCst);
+                }
+            }
+        }
+
+        // Update peak concurrent boots
+        let current_peak = self.stats.peak_concurrent_boots.load(Ordering::SeqCst);
+        if concurrent_boots > current_peak {
+            self.stats.peak_concurrent_boots.store(concurrent_boots, Ordering::SeqCst);
+        }
+
+        log::info!("Started {} secondary CPUs", started_count);
+        Ok(started_count)
+    }
+
+    /// Wait for all CPUs to be ready
+    pub fn wait_for_all_cpus_ready(&mut self, timeout_ms: u64) -> Result<usize, &'static str> {
+        let start_time = crate::arch::riscv64::cpu::csr::TIME::read();
+        let mut ready_count = 0;
+
+        log::info!("Waiting for CPUs to be ready (timeout: {}ms)", timeout_ms);
+
+        for cpu_id in 0..self.config.boot_cpus.min(crate::MAX_CPUS) {
+            if cpu_id == 0 {
+                // Primary CPU is already ready
+                ready_count += 1;
+                continue;
+            }
+
+            match crate::arch::riscv64::smp::boot::wait_for_cpu_ready(cpu_id, timeout_ms) {
+                Ok(_) => {
+                    ready_count += 1;
+                    let end_time = crate::arch::riscv64::cpu::csr::TIME::read();
+                    let boot_time = end_time.wrapping_sub(
+                        self.performance.boot_start_times[cpu_id].load(Ordering::SeqCst)
+                    );
+                    let ready_time = end_time.wrapping_sub(start_time);
+
+                    self.performance.boot_times[cpu_id].store(boot_time, Ordering::SeqCst);
+                    self.performance.readiness_times[cpu_id].store(ready_time, Ordering::SeqCst);
+                    self.set_cpu_state(cpu_id, CpuState::Running);
+
+                    log::debug!("CPU {} ready after {} cycles (ready in {} cycles)",
+                               cpu_id, boot_time, ready_time);
+                }
+                Err(e) => {
+                    log::warn!("CPU {} failed to become ready: {}", cpu_id, e);
+                    self.set_cpu_state(cpu_id, CpuState::Failed);
+                }
+            }
+        }
+
+        // Update statistics
+        let total_ready_time = crate::arch::riscv64::cpu::csr::TIME::read().wrapping_sub(start_time);
+        self.performance.last_boot_timestamp.store(total_ready_time, Ordering::SeqCst);
+
+        if ready_count == self.config.boot_cpus {
+            // Calculate average boot time
+            let total_time = self.stats.total_boot_time.load(Ordering::SeqCst);
+            self.stats.avg_boot_time.store(total_time / ready_count as u64, Ordering::SeqCst);
+        }
+
+        log::info!("{} CPUs ready out of {} requested", ready_count, self.config.boot_cpus);
+        Ok(ready_count)
+    }
+
+    /// Perform complete multi-core boot sequence
+    pub fn boot_all_cpus(&mut self) -> Result<usize, &'static str> {
+        log::info!("Starting multi-core boot sequence for {} CPUs", self.config.boot_cpus);
+
+        let start_time = crate::arch::riscv64::cpu::csr::TIME::read();
+
+        // Initialize primary CPU
+        self.initialize_primary_cpu()?;
+
+        // Start secondary CPUs
+        let started = self.start_secondary_cpus()?;
+
+        // Wait for all CPUs to be ready
+        let ready = self.wait_for_all_cpus_ready(5000)?; // 5 second timeout
+
+        let total_time = crate::arch::riscv64::cpu::csr::TIME::read().wrapping_sub(start_time);
+
+        log::info!("Multi-core boot completed: {}/{} CPUs ready in {} cycles",
+                    ready, self.config.boot_cpus, total_time);
+
+        // Update SMP state
+        unsafe {
+            SMP_STATE = SmpState::Running;
+        }
+
+        Ok(ready)
+    }
+
+    /// Perform dynamic CPU hotplug
+    pub fn hotplug_cpu(&mut self, cpu_id: usize, operation: crate::arch::riscv64::smp::boot::hotplug::HotplugOp) ->
+        Result<crate::arch::riscv64::smp::boot::hotplug::HotplugRequest, &'static str> {
+
+        match operation {
+            crate::arch::riscv64::smp::boot::hotplug::HotplugOp::Add => {
+                let config = crate::arch::riscv64::smp::boot::BootConfig::default();
+                crate::arch::riscv64::smp::boot::hotplug::cpu_add(cpu_id, config)
+            }
+            crate::arch::riscv64::smp::boot::hotplug::HotplugOp::Remove => {
+                crate::arch::riscv64::smp::boot::hotplug::cpu_remove(cpu_id)
+            }
+            crate::arch::riscv64::smp::boot::hotplug::HotplugOp::Reset => {
+                crate::arch::riscv64::smp::boot::hotplug::cpu_reset(cpu_id)
+            }
+            crate::arch::riscv64::smp::boot::hotplug::HotplugOp::Suspend => {
+                crate::arch::riscv64::smp::boot::hotplug::cpu_suspend(cpu_id)
+            }
+            crate::arch::riscv64::smp::boot::hotplug::HotplugOp::Resume => {
+                crate::arch::riscv64::smp::boot::hotplug::cpu_resume(cpu_id)
+            }
+        }
+    }
+
+    /// Get comprehensive boot statistics
+    pub fn get_boot_statistics(&self) -> BootStatisticsReport {
+        let total_attempts = self.stats.total_attempts.load(Ordering::SeqCst);
+        let successful = self.stats.successful_boots.load(Ordering::SeqCst);
+        let failed = self.stats.failed_boots.load(Ordering::SeqCst);
+        let total_time = self.stats.total_boot_time.load(Ordering::SeqCst);
+        let avg_time = self.stats.avg_boot_time.load(Ordering::SeqCst);
+        let peak_concurrent = self.stats.peak_concurrent_boots.load(Ordering::SeqCst);
+
+        let success_rate = if total_attempts > 0 {
+            (successful as f64 / total_attempts as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        let mut per_cpu_stats = Vec::new();
+        for cpu_id in 0..crate::MAX_CPUS {
+            let boot_time = self.performance.boot_times[cpu_id].load(Ordering::SeqCst);
+            let ready_time = self.performance.readiness_times[cpu_id].load(Ordering::SeqCst);
+            let state = self.boot_states[cpu_id].load(Ordering::SeqCst);
+
+            if boot_time > 0 || state != 0 {
+                per_cpu_stats.push(PerCpuBootStats {
+                    cpu_id,
+                    boot_time,
+                    ready_time,
+                    state: CpuState::from(state),
+                });
+            }
+        }
+
+        BootStatisticsReport {
+            total_attempts,
+            successful_boots: successful,
+            failed_boots: failed,
+            success_rate,
+            total_boot_time: total_time,
+            avg_boot_time: avg_time,
+            peak_concurrent_boots: peak_concurrent,
+            per_cpu_stats,
+        }
+    }
+
+    /// Set CPU state
+    fn set_cpu_state(&self, cpu_id: usize, state: CpuState) {
+        self.boot_states[cpu_id].store(state as u32, Ordering::SeqCst);
+    }
+
+    /// Get boot configuration
+    pub fn config(&self) -> &SmpConfig {
+        &self.config
+    }
+
+    /// Update configuration
+    pub fn update_config(&mut self, config: SmpConfig) {
+        self.config = config;
+    }
+}
+
+/// Per-CPU boot statistics
+#[derive(Debug, Clone)]
+pub struct PerCpuBootStats {
+    /// CPU ID
+    pub cpu_id: usize,
+    /// Boot time in cycles
+    pub boot_time: u64,
+    /// Readiness time in cycles
+    pub readiness_time: u64,
+    /// Current state
+    pub state: CpuState,
+}
+
+/// Comprehensive boot statistics report
+#[derive(Debug, Clone)]
+pub struct BootStatisticsReport {
+    /// Total boot attempts
+    pub total_attempts: usize,
+    /// Successful boots
+    pub successful_boots: usize,
+    /// Failed boots
+    pub failed_boots: usize,
+    /// Success rate as percentage
+    pub success_rate: f64,
+    /// Total boot time in cycles
+    pub total_boot_time: u64,
+    /// Average boot time per CPU in cycles
+    pub avg_boot_time: u64,
+    /// Peak concurrent boots
+    pub peak_concurrent_boots: usize,
+    /// Per-CPU statistics
+    pub per_cpu_stats: Vec<PerCpuBootStats>,
+}
+
+impl BootStatisticsReport {
+    /// Print formatted boot statistics
+    pub fn print(&self) {
+        log::info!("=== Multi-Core Boot Statistics ===");
+        log::info!("Total Attempts: {}", self.total_attempts);
+        log::info!("Successful Boots: {}", self.successful_boots);
+        log::info!("Failed Boots: {}", self.failed_boots);
+        log::info!("Success Rate: {:.2}%", self.success_rate);
+        log::info!("Total Boot Time: {} cycles", self.total_boot_time);
+        log::info!("Average Boot Time: {} cycles/CPU", self.avg_boot_time);
+        log::info!("Peak Concurrent Boots: {}", self.peak_concurrent_boots);
+
+        log::info!("Per-CPU Statistics:");
+        for stats in &self.per_cpu_stats {
+            log::info!("  CPU {}: state={:?}, boot_time={}, ready_time={}",
+                      stats.cpu_id, stats.state, stats.boot_time, stats.readiness_time);
+        }
+        log::info!("================================");
+    }
+}
+
+/// CPU boot state for multi-core management
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CpuState {
+    /// CPU not initialized
+    Uninitialized = 0,
+    /// CPU booting
+    Booting = 1,
+    /// CPU running
+    Running = 2,
+    /// CPU failed to boot
+    Failed = 3,
+    /// CPU suspended
+    Suspended = 4,
+    /// CPU offline
+    Offline = 5,
+}
+
+impl From<u32> for CpuState {
+    fn from(value: u32) -> Self {
+        match value {
+            0 => CpuState::Uninitialized,
+            1 => CpuState::Booting,
+            2 => CpuState::Running,
+            3 => CpuState::Failed,
+            4 => CpuState::Suspended,
+            5 => CpuState::Offline,
+            _ => CpuState::Uninitialized,
+        }
+    }
+}
+
+/// Global multi-core boot manager
+static mut BOOT_MANAGER: Option<MultiCoreBootManager> = None;
+
+/// Get global multi-core boot manager
+pub fn get_boot_manager() -> Option<&'static MultiCoreBootManager> {
+    unsafe { BOOT_MANAGER.as_ref() }
+}
+
+/// Get mutable global multi-core boot manager
+pub fn get_boot_manager_mut() -> Option<&'static mut MultiCoreBootManager> {
+    unsafe { BOOT_MANAGER.as_mut() }
+}
+
+/// Initialize multi-core boot system
+pub fn init_multi_core_boot(config: SmpConfig) -> Result<(), &'static str> {
+    log::info!("Initializing multi-core boot system with config: {:?}", config);
+
+    let mut manager = MultiCoreBootManager::new(config);
+
+    // Initialize the boot manager
+    manager.initialize()?;
+
+    // Store global reference
+    unsafe {
+        BOOT_MANAGER = Some(manager);
+    }
+
+    log::info!("Multi-core boot system initialized");
+    Ok(())
+}
+
+/// Perform complete multi-core boot
+pub fn boot_all_cpus() -> Result<usize, &'static str> {
+    if let Some(manager) = get_boot_manager_mut() {
+        manager.boot_all_cpus()
+    } else {
+        Err("Multi-core boot manager not initialized")
+    }
+}
+
 /// Load balancer trait
 pub trait LoadBalancer {
     /// Select a CPU for a task
@@ -380,6 +839,28 @@ impl LoadBalancer for RoundRobinLoadBalancer {
     }
 }
 
+/// Atomic wrapper for f64 values
+#[derive(Debug)]
+pub struct AtomicF64 {
+    bits: AtomicU64,
+}
+
+impl AtomicF64 {
+    pub const fn new(value: f64) -> Self {
+        Self {
+            bits: AtomicU64::new(value.to_bits()),
+        }
+    }
+
+    pub fn store(&self, value: f64, ordering: Ordering) {
+        self.bits.store(value.to_bits(), ordering);
+    }
+
+    pub fn load(&self, ordering: Ordering) -> f64 {
+        f64::from_bits(self.bits.load(ordering))
+    }
+}
+
 /// Least loaded load balancer
 pub struct LeastLoadedLoadBalancer {
     cpu_loads: [AtomicF64; MAX_CPUS],
@@ -468,9 +949,6 @@ impl LoadBalancer for AffinityLoadBalancer {
         None
     }
 }
-
-// Fallback for AtomicF64 if not available
-use core::sync::atomic::AtomicU64 as AtomicF64;
 
 #[cfg(test)]
 mod tests {

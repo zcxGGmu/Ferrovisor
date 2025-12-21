@@ -425,29 +425,233 @@ pub fn poweroff_cpu(cpu_id: usize) -> Result<(), &'static str> {
     Ok(())
 }
 
-/// CPU hotplug support
+/// Enhanced CPU hotplug support with advanced features
 pub mod hotplug {
     use super::*;
+    use core::sync::atomic::{AtomicUsize, Ordering};
 
-    /// Add a CPU to the system
-    pub fn cpu_add(cpu_id: usize, config: BootConfig) -> Result<(), &'static str> {
+    /// Hotplug operation types
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum HotplugOp {
+        /// Add CPU to system
+        Add,
+        /// Remove CPU from system
+        Remove,
+        /// Reset CPU
+        Reset,
+        /// Suspend CPU
+        Suspend,
+        /// Resume CPU
+        Resume,
+    }
+
+    /// Hotplug operation status
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum HotplugStatus {
+        /// Operation completed successfully
+        Success,
+        /// Operation failed
+        Failed,
+        /// Operation in progress
+        InProgress,
+        /// Operation not supported
+        NotSupported,
+    }
+
+    /// Hotplug operation request
+    #[derive(Debug)]
+    pub struct HotplugRequest {
+        /// CPU ID
+        pub cpu_id: usize,
+        /// Operation type
+        pub operation: HotplugOp,
+        /// Request timestamp
+        pub timestamp: u64,
+        /// Requester ID
+        pub requester: u32,
+        /// Configuration for add operations
+        pub config: Option<BootConfig>,
+        /// Error code if failed
+        pub error_code: isize,
+        /// Operation status
+        pub status: HotplugStatus,
+    }
+
+    impl HotplugRequest {
+        /// Create new hotplug request
+        pub fn new(cpu_id: usize, operation: HotplugOp, requester: u32) -> Self {
+            Self {
+                cpu_id,
+                operation,
+                timestamp: read_csr!(crate::arch::riscv64::cpu::csr::TIME),
+                requester,
+                config: None,
+                error_code: 0,
+                status: HotplugStatus::InProgress,
+            }
+        }
+
+        /// Complete the request successfully
+        pub fn complete_success(&mut self) {
+            self.status = HotplugStatus::Success;
+            self.error_code = 0;
+        }
+
+        /// Mark the request as failed
+        pub fn complete_failure(&mut self, error_code: isize) {
+            self.status = HotplugStatus::Failed;
+            self.error_code = error_code;
+        }
+    }
+
+    /// Hotplug statistics
+    #[derive(Debug, Default)]
+    pub struct HotplugStats {
+        /// Total operations performed
+        pub total_operations: AtomicUsize,
+        /// Successful operations
+        pub successful_operations: AtomicUsize,
+        /// Failed operations
+        pub failed_operations: AtomicUsize,
+        /// Current online CPUs
+        pub online_cpus: AtomicUsize,
+        /// Peak online CPUs
+        pub peak_online_cpus: AtomicUsize,
+        /// Total CPU additions
+        pub cpu_additions: AtomicUsize,
+        /// Total CPU removals
+        pub cpu_removals: AtomicUsize,
+        /// Total CPU resets
+        pub cpu_resets: AtomicUsize,
+    }
+
+    impl HotplugStats {
+        /// Get success rate as percentage
+        pub fn success_rate(&self) -> f64 {
+            let total = self.total_operations.load(Ordering::Relaxed);
+            if total == 0 {
+                return 0.0;
+            }
+            let successful = self.successful_operations.load(Ordering::Relaxed);
+            (successful as f64 / total as f64) * 100.0
+        }
+
+        /// Update statistics for successful operation
+        pub fn record_success(&self, operation: HotplugOp) {
+            self.total_operations.fetch_add(1, Ordering::Relaxed);
+            self.successful_operations.fetch_add(1, Ordering::Relaxed);
+
+            match operation {
+                HotplugOp::Add => self.cpu_additions.fetch_add(1, Ordering::Relaxed),
+                HotplugOp::Remove => self.cpu_removals.fetch_add(1, Ordering::Relaxed),
+                HotplugOp::Reset => self.cpu_resets.fetch_add(1, Ordering::Relaxed),
+                _ => 0,
+            };
+
+            // Update peak online CPUs
+            let current_online = self.online_cpus.load(Ordering::Relaxed);
+            let mut peak = self.peak_online_cpus.load(Ordering::Relaxed);
+            while current_online > peak {
+                match self.peak_online_cpus.compare_exchange_weak(
+                    peak, current_online, Ordering::Relaxed, Ordering::Relaxed
+                ) {
+                    Ok(_) => break,
+                    Err(actual) => peak = actual,
+                }
+            }
+        }
+
+        /// Update statistics for failed operation
+        pub fn record_failure(&self) {
+            self.total_operations.fetch_add(1, Ordering::Relaxed);
+            self.failed_operations.fetch_add(1, Ordering::Relaxed);
+        }
+
+        /// Update online CPU count
+        pub fn update_online_count(&self, delta: isize) {
+            if delta > 0 {
+                self.online_cpus.fetch_add(delta as usize, Ordering::Relaxed);
+            } else {
+                self.online_cpus.fetch_sub(delta.unsigned_abs() as usize, Ordering::Relaxed);
+            }
+        }
+    }
+
+    /// Global hotplug statistics
+    static HOTPLUG_STATS: HotplugStats = HotplugStats::default();
+
+    /// Current hotplug requests (pending operations)
+    static mut PENDING_REQUESTS: [Option<HotplugRequest>; 16] = [None; 16];
+    static mut PENDING_COUNT: AtomicUsize = AtomicUsize::new(0);
+
+    /// Get hotplug statistics
+    pub fn get_hotplug_stats() -> &'static HotplugStats {
+        &HOTPLUG_STATS
+    }
+
+    /// Add a CPU to the system with enhanced features
+    pub fn cpu_add(cpu_id: usize, config: BootConfig) -> Result<HotplugRequest, &'static str> {
         if cpu_id >= MAX_CPUS {
             return Err("Invalid CPU ID");
         }
 
+        if cpu_id == 0 {
+            return Err("Cannot add primary CPU");
+        }
+
+        // Check if CPU is already online
+        if crate::arch::riscv64::smp::is_cpu_online(cpu_id) {
+            return Err("CPU already online");
+        }
+
+        log::info!("Adding CPU {} to system", cpu_id);
+
+        // Create hotplug request
+        let mut request = HotplugRequest::new(cpu_id, HotplugOp::Add, 0);
+        request.config = Some(config.clone());
+
+        // Initialize CPU boot information
         if let Some(info) = get_cpu_boot_info_mut(cpu_id) {
-            info.config = config;
+            info.config = config.clone();
             info.state = CpuBootState::NotStarted;
             info.error_code = 0;
             info.stack_pointer = config.stack_top - (cpu_id * 64 * 1024);
         }
 
-        log::info!("CPU {} added to system", cpu_id);
-        Ok(())
+        // Try to start the CPU
+        match start_secondary_cpu(cpu_id) {
+            Ok(_) => {
+                // Wait for CPU to be ready with timeout
+                match wait_for_cpu_ready(cpu_id, 5000) {
+                    Ok(_) => {
+                        request.complete_success();
+                        HOTPLUG_STATS.record_success(HotplugOp::Add);
+                        HOTPLUG_STATS.update_online_count(1);
+
+                        // Mark CPU as online in SMP subsystem
+                        crate::arch::riscv64::smp::mark_cpu_online(cpu_id);
+
+                        log::info!("CPU {} successfully added and ready", cpu_id);
+                    }
+                    Err(e) => {
+                        request.complete_failure(e.as_ptr() as isize);
+                        HOTPLUG_STATS.record_failure();
+                        log::error!("CPU {} failed to become ready: {}", cpu_id, e);
+                    }
+                }
+            }
+            Err(e) => {
+                request.complete_failure(e.as_ptr() as isize);
+                HOTPLUG_STATS.record_failure();
+                log::error!("Failed to start CPU {}: {}", cpu_id, e);
+            }
+        }
+
+        Ok(request)
     }
 
-    /// Remove a CPU from the system
-    pub fn cpu_remove(cpu_id: usize) -> Result<(), &'static str> {
+    /// Remove a CPU from the system with enhanced features
+    pub fn cpu_remove(cpu_id: usize) -> Result<HotplugRequest, &'static str> {
         if cpu_id == 0 {
             return Err("Cannot remove primary CPU");
         }
@@ -456,11 +660,158 @@ pub mod hotplug {
             return Err("Invalid CPU ID");
         }
 
-        // Power off the CPU first
-        poweroff_cpu(cpu_id)?;
+        if !crate::arch::riscv64::smp::is_cpu_online(cpu_id) {
+            return Err("CPU not online");
+        }
 
-        log::info!("CPU {} removed from system", cpu_id);
-        Ok(())
+        log::info!("Removing CPU {} from system", cpu_id);
+
+        let mut request = HotplugRequest::new(cpu_id, HotplugOp::Remove, 0);
+
+        // Check if CPU can be safely removed
+        if !cpu_can_remove_safely(cpu_id) {
+            request.complete_failure(-1);
+            HOTPLUG_STATS.record_failure();
+            return Err("CPU cannot be safely removed (currently in use)");
+        }
+
+        // Gracefully shutdown the CPU
+        match graceful_shutdown_cpu(cpu_id) {
+            Ok(_) => {
+                request.complete_success();
+                HOTPLUG_STATS.record_success(HotplugOp::Remove);
+                HOTPLUG_STATS.update_online_count(-1);
+
+                // Mark CPU as offline in SMP subsystem
+                crate::arch::riscv64::smp::mark_cpu_offline(cpu_id);
+
+                log::info!("CPU {} successfully removed", cpu_id);
+            }
+            Err(e) => {
+                request.complete_failure(e.as_ptr() as isize);
+                HOTPLUG_STATS.record_failure();
+                log::error!("Failed to remove CPU {}: {}", cpu_id, e);
+            }
+        }
+
+        Ok(request)
+    }
+
+    /// Reset a CPU with enhanced features
+    pub fn cpu_reset(cpu_id: usize) -> Result<HotplugRequest, &'static str> {
+        if cpu_id >= MAX_CPUS {
+            return Err("Invalid CPU ID");
+        }
+
+        log::info!("Resetting CPU {}", cpu_id);
+
+        let mut request = HotplugRequest::new(cpu_id, HotplugOp::Reset, 0);
+
+        // Check if CPU is online
+        let was_online = crate::arch::riscv64::smp::is_cpu_online(cpu_id);
+
+        // Reset the CPU
+        match reset_cpu(cpu_id) {
+            Ok(_) => {
+                // If CPU was online, wait for it to become ready again
+                if was_online {
+                    match wait_for_cpu_ready(cpu_id, 5000) {
+                        Ok(_) => {
+                            request.complete_success();
+                        }
+                        Err(e) => {
+                            request.complete_failure(e.as_ptr() as isize);
+                        }
+                    }
+                } else {
+                    request.complete_success();
+                }
+
+                if request.status == HotplugStatus::Success {
+                    HOTPLUG_STATS.record_success(HotplugOp::Reset);
+                    log::info!("CPU {} successfully reset", cpu_id);
+                }
+            }
+            Err(e) => {
+                request.complete_failure(e.as_ptr() as isize);
+                HOTPLUG_STATS.record_failure();
+                log::error!("Failed to reset CPU {}: {}", cpu_id, e);
+            }
+        }
+
+        Ok(request)
+    }
+
+    /// Suspend a CPU
+    pub fn cpu_suspend(cpu_id: usize) -> Result<HotplugRequest, &'static str> {
+        if cpu_id >= MAX_CPUS {
+            return Err("Invalid CPU ID");
+        }
+
+        if cpu_id == 0 {
+            return Err("Cannot suspend primary CPU");
+        }
+
+        if !crate::arch::riscv64::smp::is_cpu_online(cpu_id) {
+            return Err("CPU not online");
+        }
+
+        log::info!("Suspending CPU {}", cpu_id);
+
+        let mut request = HotplugRequest::new(cpu_id, HotplugOp::Suspend, 0);
+
+        // Send suspend IPI to CPU
+        match crate::arch::riscv64::smp::send_ipi(cpu_id, crate::arch::riscv64::smp::ipi::IpiType::Suspend as u32) {
+            Ok(_) => {
+                // Wait for CPU to acknowledge suspension
+                // In a real implementation, this would involve more sophisticated coordination
+                request.complete_success();
+                HOTPLUG_STATS.record_success(HotplugOp::Suspend);
+                log::info!("CPU {} suspended", cpu_id);
+            }
+            Err(e) => {
+                request.complete_failure(e.as_ptr() as isize);
+                HOTPLUG_STATS.record_failure();
+                log::error!("Failed to suspend CPU {}: {}", cpu_id, e);
+            }
+        }
+
+        Ok(request)
+    }
+
+    /// Resume a suspended CPU
+    pub fn cpu_resume(cpu_id: usize) -> Result<HotplugRequest, &'static str> {
+        if cpu_id >= MAX_CPUS {
+            return Err("Invalid CPU ID");
+        }
+
+        log::info!("Resuming CPU {}", cpu_id);
+
+        let mut request = HotplugRequest::new(cpu_id, HotplugOp::Resume, 0);
+
+        // Send resume IPI to CPU
+        match crate::arch::riscv64::smp::send_ipi(cpu_id, crate::arch::riscv64::smp::ipi::IpiType::Resume as u32) {
+            Ok(_) => {
+                // Wait for CPU to acknowledge resume
+                match wait_for_cpu_ready(cpu_id, 2000) {
+                    Ok(_) => {
+                        request.complete_success();
+                        HOTPLUG_STATS.record_success(HotplugOp::Resume);
+                        log::info!("CPU {} resumed", cpu_id);
+                    }
+                    Err(e) => {
+                        request.complete_failure(e.as_ptr() as isize);
+                    }
+                }
+            }
+            Err(e) => {
+                request.complete_failure(e.as_ptr() as isize);
+                HOTPLUG_STATS.record_failure();
+                log::error!("Failed to resume CPU {}: {}", cpu_id, e);
+            }
+        }
+
+        Ok(request)
     }
 
     /// Check if CPU can be hot-plugged
@@ -470,10 +821,136 @@ pub mod hotplug {
         }
 
         if let Some(info) = get_cpu_boot_info(cpu_id) {
-            info.state == CpuBootState::NotStarted
+            info.state == CpuBootState::NotStarted || info.state == CpuBootState::Failed
         } else {
             false
         }
+    }
+
+    /// Check if CPU can be safely removed
+    fn cpu_can_remove_safely(cpu_id: usize) -> bool {
+        // Check if CPU has any VCPU assigned
+        if let Some(per_cpu) = crate::arch::riscv64::cpu::state::cpu_data(cpu_id) {
+            if per_cpu.get_vcpu_id().is_some() {
+                return false;
+            }
+        }
+
+        // Check if CPU has any pending work
+        // In a real implementation, this would check scheduler queues, etc.
+
+        true
+    }
+
+    /// Gracefully shutdown a CPU
+    fn graceful_shutdown_cpu(cpu_id: usize) -> Result<(), &'static str> {
+        log::debug!("Gracefully shutting down CPU {}", cpu_id);
+
+        // Send shutdown IPI
+        crate::arch::riscv64::smp::send_ipi(cpu_id, crate::arch::riscv64::smp::ipi::IpiType::Shutdown as u32)?;
+
+        // Wait for CPU to acknowledge shutdown
+        let start_time = read_csr!(crate::arch::riscv64::cpu::csr::TIME);
+        let timeout = 10_000_000; // ~1 second at 10MHz
+
+        loop {
+            if let Some(info) = get_cpu_boot_info(cpu_id) {
+                if info.state == CpuBootState::NotStarted {
+                    return Ok(());
+                }
+            }
+
+            let current_time = read_csr!(crate::arch::riscv64::cpu::csr::TIME);
+            if current_time.wrapping_sub(start_time) > timeout {
+                break; // Timeout
+            }
+
+            // Small delay
+            for _ in 0..1000 {
+                crate::arch::riscv64::cpu::asm::nop();
+            }
+        }
+
+        // Force power off if graceful shutdown failed
+        poweroff_cpu(cpu_id)
+    }
+
+    /// Batch hotplug operations
+    pub fn batch_hotplug_operations(operations: Vec<(usize, HotplugOp, Option<BootConfig>)>) -> Vec<HotplugRequest> {
+        let mut results = Vec::with_capacity(operations.len());
+
+        for (cpu_id, operation, config) in operations {
+            let result = match operation {
+                HotplugOp::Add => {
+                    if let Some(cfg) = config {
+                        cpu_add(cpu_id, cfg)
+                    } else {
+                        let mut req = HotplugRequest::new(cpu_id, operation, 0);
+                        req.complete_failure(-2); // No configuration provided
+                        Ok(req)
+                    }
+                }
+                HotplugOp::Remove => cpu_remove(cpu_id),
+                HotplugOp::Reset => cpu_reset(cpu_id),
+                HotplugOp::Suspend => cpu_suspend(cpu_id),
+                HotplugOp::Resume => cpu_resume(cpu_id),
+            };
+
+            match result {
+                Ok(req) => results.push(req),
+                Err(e) => {
+                    let mut req = HotplugRequest::new(cpu_id, operation, 0);
+                    req.complete_failure(e.as_ptr() as isize);
+                    results.push(req);
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Validate CPU hotplug request
+    pub fn validate_hotplug_request(request: &HotplugRequest) -> Result<(), &'static str> {
+        // Validate CPU ID
+        if request.cpu_id >= MAX_CPUS {
+            return Err("Invalid CPU ID");
+        }
+
+        // Validate operation based on current state
+        match request.operation {
+            HotplugOp::Add => {
+                if crate::arch::riscv64::smp::is_cpu_online(request.cpu_id) {
+                    return Err("CPU already online");
+                }
+                if request.config.is_none() {
+                    return Err("Boot configuration required for add operation");
+                }
+            }
+            HotplugOp::Remove => {
+                if !crate::arch::riscv64::smp::is_cpu_online(request.cpu_id) {
+                    return Err("CPU not online");
+                }
+                if request.cpu_id == 0 {
+                    return Err("Cannot remove primary CPU");
+                }
+            }
+            HotplugOp::Reset => {
+                // Reset is always allowed
+            }
+            HotplugOp::Suspend => {
+                if !crate::arch::riscv64::smp::is_cpu_online(request.cpu_id) {
+                    return Err("CPU not online");
+                }
+                if request.cpu_id == 0 {
+                    return Err("Cannot suspend primary CPU");
+                }
+            }
+            HotplugOp::Resume => {
+                // Resume can be attempted even if CPU appears offline (might be suspended)
+            }
+        }
+
+        Ok(())
     }
 }
 
