@@ -11,11 +11,13 @@ pub mod vcpu;
 pub mod vm;
 pub mod devices;
 pub mod delegation;
+pub mod virtual_csr;
 
 pub use hextension::*;
 pub use vcpu::*;
 pub use vm::*;
 pub use delegation::*;
+pub use virtual_csr::*;
 
 use crate::arch::riscv64::*;
 
@@ -47,6 +49,9 @@ pub fn init() -> Result<(), &'static str> {
 
     // Initialize exception delegation
     delegation::init()?;
+
+    // Initialize virtual CSR state manager
+    virtual_csr::init()?;
 
     // Initialize VM manager
     let vm_manager = VmManager::new();

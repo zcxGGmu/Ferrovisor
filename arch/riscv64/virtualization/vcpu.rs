@@ -75,8 +75,10 @@ pub struct Vcpu {
     pub vmid: u16,
     /// CPU state
     pub cpu_state: CpuState,
-    /// Guest CSR state
+    /// Guest CSR state (legacy)
     pub guest_csr: GuestCsrState,
+    /// Enhanced virtual CSR state
+    pub virtual_csr: VirtualCsrState,
     /// Current VCPU state
     pub state: VcpuState,
     /// VCPU flags
@@ -99,6 +101,7 @@ impl Vcpu {
             vmid,
             cpu_state: CpuState::new(),
             guest_csr: GuestCsrState::new(),
+            virtual_csr: VirtualCsrState::new(vmid),
             state: VcpuState::Uninitialized,
             flags,
             exit_info: None,
@@ -194,20 +197,26 @@ impl Vcpu {
 
     /// Save VCPU state
     pub fn save_state(&mut self) -> Result<(), &'static str> {
-        // Save guest CSR state
+        // Save guest CSR state using enhanced virtual CSR
+        self.virtual_csr = VirtualCsrState::save_from_hw(self.vmid)?;
+
+        // Also update legacy guest CSR for compatibility
         self.guest_csr = GuestCsrState::save();
 
         // Update statistics
         self.stats.instructions_executed += read_csr!(crate::arch::riscv64::cpu::csr::MINSTRET);
         self.stats.cycles_spent += read_csr!(crate::arch::riscv64::cpu::csr::MCYCLE);
 
-        log::debug!("Saved state for VCPU {}", self.id);
+        log::debug!("Saved state for VCPU {} using VirtualCsrState", self.id);
         Ok(())
     }
 
     /// Restore VCPU state
     pub fn restore_state(&self) -> Result<(), &'static str> {
-        // Restore guest CSR state
+        // Restore using enhanced virtual CSR
+        self.virtual_csr.restore_to_hw()?;
+
+        // Also update legacy guest CSR for compatibility
         self.guest_csr.load();
 
         // In a real implementation, this would also restore:
@@ -215,8 +224,48 @@ impl Vcpu {
         // - Floating point registers
         // - Vector registers (if V extension is enabled)
 
-        log::debug!("Restored state for VCPU {}", self.id);
+        log::debug!("Restored state for VCPU {} using VirtualCsrState", self.id);
         Ok(())
+    }
+
+    /// Save VCPU state with validation
+    pub fn save_state_validated(&mut self) -> Result<(), &'static str> {
+        // Save state
+        self.save_state()?;
+
+        // Validate saved state
+        self.virtual_csr.validate().map_err(|e| {
+            log::error!("Validation failed for VCPU {} state: {}", self.id, e);
+            e
+        })?;
+
+        log::debug!("Saved and validated state for VCPU {}", self.id);
+        Ok(())
+    }
+
+    /// Restore VCPU state with optimized switching
+    pub fn restore_state_optimized(&self, from_state: &VirtualCsrState) -> Result<(), &'static str> {
+        // Use optimized state switching
+        switch_state(from_state, &self.virtual_csr)?;
+
+        log::debug!("Optimized state restore for VCPU {}", self.id);
+        Ok(())
+    }
+
+    /// Get virtual CSR state
+    pub fn get_virtual_csr(&self) -> &VirtualCsrState {
+        &self.virtual_csr
+    }
+
+    /// Get mutable virtual CSR state
+    pub fn get_virtual_csr_mut(&mut self) -> &mut VirtualCsrState {
+        &mut self.virtual_csr
+    }
+
+    /// Update virtual CSR from legacy state
+    pub fn sync_virtual_from_legacy(&mut self) {
+        self.virtual_csr = VirtualCsrState::from(self.guest_csr.clone());
+        self.virtual_csr.vmid = self.vmid;
     }
 
     /// Get VCPU statistics
@@ -524,5 +573,26 @@ mod tests {
         manager.inject_interrupt_to_vm(100, 5).unwrap();
         assert!(vcpu1.has_pending_interrupt(5));
         assert!(vcpu2.has_pending_interrupt(5));
+    }
+
+    #[test]
+    fn test_vcpu_virtual_csr_state() {
+        let mut vcpu = Vcpu::new(0, 1, VcpuFlags::VIRTUAL_INTERRUPTS);
+
+        // Test initial virtual CSR state
+        assert_eq!(vcpu.virtual_csr.vmid, 1);
+        assert_eq!(vcpu.virtual_csr.vsstatus, VsstatusFlags::empty());
+
+        // Test state synchronization
+        vcpu.sync_virtual_from_legacy();
+        assert_eq!(vcpu.virtual_csr.vmid, vcpu.vmid);
+
+        // Test virtual CSR access
+        let virtual_csr = vcpu.get_virtual_csr();
+        assert_eq!(virtual_csr.vmid, 1);
+
+        let virtual_csr_mut = vcpu.get_virtual_csr_mut();
+        virtual_csr_mut.set_vsstatus_raw(0x80000001);
+        assert_eq!(virtual_csr_mut.get_vsstatus_raw(), 0x80000001);
     }
 }
