@@ -12,12 +12,17 @@ pub mod slab;
 pub mod buddy;
 pub mod allocator;
 pub mod hugepage;
+pub mod gstage;
 
 // Re-export commonly used types
 pub use page::{AddressSpace, AddressSpaceType};
 pub use page::{CowPage, CowStats, CowManager, get_cow_manager, init_cow, handle_write_fault, optimize_memory_sharing};
 pub use hugepage::{HugePage, HugePageManager, HugePageStats, PageSize, default_huge_page_size, default_huge_page_shift};
 pub use hugepage::{get_huge_page_manager, init_huge_page_manager, alloc_huge_page, free_huge_page, can_use_huge_pages, optimize_with_huge_pages};
+pub use gstage::{GStageContext, GStageManager, GStagePageTable, GStagePte, GStageMode, GStageLevel};
+pub use gstage::{Gva, Gpa, Hpa, Vmid, init as init_gstage, get as get_gstage_manager, get_expect as get_gstage_manager_expect};
+pub use gstage::gstage_pte;
+pub use gstage::flags as gstage_flags;
 
 /// Physical address type
 pub type PhysAddr = u64;
@@ -323,6 +328,9 @@ pub fn init() -> Result<()> {
 
     // Initialize huge page management
     hugepage::init_huge_page_manager().map_err(|_| crate::Error::MemoryError)?;
+
+    // Initialize G-stage address translation (support up to 256 VMs)
+    gstage::init(255)?;
 
     Ok(())
 }

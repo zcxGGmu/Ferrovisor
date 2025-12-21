@@ -337,6 +337,28 @@ pub fn is_valid_phys_addr(addr: PhysAddr) -> bool {
     addr < (1u64 << 48) // 48-bit physical addresses
 }
 
+/// Convert physical address to virtual address
+/// This is a simple direct mapping for the hypervisor
+pub fn phys_to_virt(addr: PhysAddr) -> VirtAddr {
+    // In a real implementation, this would use the hypervisor's direct mapping
+    // For now, we use a simple offset-based mapping
+    const DIRECT_MAP_OFFSET: u64 = 0xFFFF_FF80_0000_0000; // Example offset
+    addr + DIRECT_MAP_OFFSET
+}
+
+/// Convert virtual address to physical address
+/// This works for addresses in the direct mapping region
+pub fn virt_to_phys(addr: VirtAddr) -> Option<PhysAddr> {
+    const DIRECT_MAP_OFFSET: u64 = 0xFFFF_FF80_0000_0000; // Example offset
+    const DIRECT_MAP_SIZE: u64 = 0x0000_0080_0000_0000; // 512GB direct map
+
+    if addr >= DIRECT_MAP_OFFSET && addr < (DIRECT_MAP_OFFSET + DIRECT_MAP_SIZE) {
+        Some(addr - DIRECT_MAP_OFFSET)
+    } else {
+        None
+    }
+}
+
 /// Check if a frame number is valid
 pub fn is_valid_frame(frame: FrameNr) -> bool {
     is_valid_phys_addr(frame * PAGE_SIZE)
