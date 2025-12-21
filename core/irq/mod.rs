@@ -12,6 +12,7 @@ use crate::utils::bitmap::Bitmap;
 pub mod chip;
 pub mod handler;
 pub mod exception;
+pub mod msi;
 
 /// Interrupt number type
 pub type IrqNumber = u32;
@@ -31,16 +32,48 @@ pub enum IrqType {
 }
 
 /// Interrupt priority levels
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Priority {
+    /// Lowest priority
+    Lowest = 0,
     /// Low priority
-    Low = 0,
-    /// Medium priority
-    Medium = 1,
+    Low = 1,
+    /// Normal priority
+    Normal = 2,
     /// High priority
-    High = 2,
-    /// Critical priority
-    Critical = 3,
+    High = 3,
+    /// Highest priority
+    Highest = 4,
+}
+
+/// Interrupt controller trait
+pub trait InterruptController {
+    /// Initialize the interrupt controller
+    fn init(&mut self) -> Result<()>;
+
+    /// Enable an interrupt
+    fn enable_irq(&mut self, irq: IrqNumber) -> Result<()>;
+
+    /// Disable an interrupt
+    fn disable_irq(&mut self, irq: IrqNumber) -> Result<()>;
+
+    /// Acknowledge an interrupt
+    fn ack_irq(&mut self, irq: IrqNumber) -> Result<()>;
+
+    /// Set interrupt priority
+    fn set_priority(&mut self, irq: IrqNumber, priority: Priority) -> Result<()>;
+
+    /// Set interrupt type (edge/level triggered)
+    fn set_type(&mut self, irq: IrqNumber, edge_triggered: bool) -> Result<()>;
+
+    /// Get pending interrupts as bitmap
+    fn get_pending_irqs(&self) -> u64;
+
+    /// Check if a specific interrupt is pending
+    fn is_pending(&self, irq: IrqNumber) -> bool;
+
+    /// Handle the next pending interrupt
+    fn handle_interrupt(&mut self) -> Option<IrqNumber>;
 }
 
 /// Interrupt descriptor
