@@ -1547,15 +1547,182 @@ pub fn translate_active_optimized(gpa: Gpa) -> Result<Hpa> {
     }
 }
 
-/// Flush TLB for all VMs
+/// Flush TLB for all VMs with optimized management
 pub fn flush_all_tlbs() {
     if let Some(manager) = get() {
-        // This would iterate through all VMs and flush their TLBs
-        // For now, just flush the current TLB
-        #[cfg(target_arch = "riscv64")]
-        unsafe {
-            core::arch::asm!("sfence.vma");
+        // Use optimized flush for all VMs
+        crate::arch::riscv64::mmu::tlb::get_manager_mut()
+            .map(|tlb_mgr| tlb_mgr.flush_all());
+    }
+}
+
+/// Perform optimized GPA to HPA translation with TLB integration
+pub fn translate_with_tlb_optimization(gpa: Gpa) -> Result<Hpa> {
+    if let Some(manager) = get() {
+        if let Some(vmid) = manager.get_active_vmid() {
+            if let Some(context) = manager.get_context(vmid) {
+                // Try optimized translation first
+                if let Some(hpa) = translate_active_optimized(gpa) {
+                    return Ok(hpa);
+                }
+
+                // Fallback to regular translation
+                context.translate(gpa)
+            } else {
+                Err(Error::NotFound)
+            }
+        } else {
+            Err(Error::InvalidState)
         }
+    } else {
+        Err(Error::InvalidState)
+    }
+}
+
+/// Perform bulk translation with TLB preloading
+pub fn translate_bulk_with_preloading(gpas: &[Gpa]) -> Vec<Result<Hpa>> {
+    let mut results = Vec::with_capacity(gpas.len());
+
+    if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
+        if let Some(gstage_manager) = get() {
+            if let Some(vmid) = gstage_manager.get_active_vmid() {
+                // Preload TLB with entries that are likely to be accessed
+                let asid = 0; // G-stage typically uses ASID 0
+
+                for &gpa in gpas {
+                    // Try optimized G-stage translation
+                    if let Some(hpa) = tlb_manager.translate_gstage_optimized(gpa, asid, vmid) {
+                        results.push(Ok(hpa));
+                    } else {
+                        // Fallback to regular translation and cache the result
+                        if let Some(context) = gstage_manager.get_context(vmid) {
+                            match context.translate(gpa) {
+                                Ok(hpa) => {
+                                    // Insert into TLB for future access
+                                    let entry = crate::arch::riscv64::mmu::tlb::TlbEntry::new(
+                                        gpa as usize,
+                                        hpa as usize,
+                                        asid,
+                                        vmid,
+                                        4096, // Page size
+                                        crate::arch::riscv64::mmu::tlb::TlbPermissions::READ |
+                                        crate::arch::riscv64::mmu::tlb::TlbPermissions::WRITE |
+                                        crate::arch::riscv64::mmu::tlb::TlbPermissions::VALID,
+                                        crate::arch::riscv64::mmu::tlb::TlbEntryType::GStage,
+                                        0,
+                                    );
+                                    tlb_manager.insert_gstage(entry);
+                                    results.push(Ok(hpa));
+                                }
+                                Err(e) => results.push(Err(e)),
+                            }
+                        } else {
+                            results.push(Err(Error::InvalidState));
+                        }
+                    }
+                }
+            } else {
+                // No active VM, fill with errors
+                results.resize(gpas.len(), Err(Error::InvalidState));
+            }
+        } else {
+            results.resize(gpas.len(), Err(Error::InvalidState));
+        }
+    } else {
+        results.resize(gpas.len(), Err(Error::InvalidState));
+    }
+
+    results
+}
+
+/// Invalidate GPA range with TLB optimization
+pub fn invalidate_range_optimized(gpa: Gpa, size: u64) -> Result<()> {
+    if let Some(manager) = get() {
+        if let Some(vmid) = manager.get_active_vmid() {
+            // Use optimized range invalidation
+            if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
+                let invalidated = tlb_manager.invalidate_range_optimized(
+                    gpa as usize,
+                    size as usize,
+                    0, // ASID
+                    vmid,
+                );
+
+                crate::debug!("Invalidated {} TLB entries for GPA range {:#x}-{:#x}",
+                             invalidated, gpa, gpa + size);
+            }
+
+            // Also flush G-stage hardware TLB
+            manager.flush_tlb(Some(gpa), Some(size));
+        }
+        Ok(())
+    } else {
+        Err(Error::InvalidState)
+    }
+}
+
+/// Get TLB performance report for G-stage
+pub fn get_tlb_performance_report() -> Option<crate::arch::riscv64::mmu::tlb::TlbReport> {
+    if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager() {
+        let mut report = tlb_manager.generate_report();
+
+        // Filter for G-stage specific metrics
+        if let Some(gstage_manager) = get() {
+            if let Some(vmid) = gstage_manager.get_active_vmid() {
+                // Add VM-specific information
+                report.vm_distribution.retain(|(id, _)| *id == vmid);
+            }
+        }
+
+        Some(report)
+    } else {
+        None
+    }
+}
+
+/// Perform periodic TLB maintenance for G-stage
+pub fn perform_tlb_maintenance() {
+    if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
+        tlb_manager.perform_maintenance();
+
+        // Get health metrics and log if needed
+        let health = tlb_manager.get_health_metrics();
+        if health.needs_attention() {
+            health.print();
+        }
+    }
+}
+
+/// Configure TLB optimization strategy for G-stage workloads
+pub fn configure_tlb_optimization() -> Result<()> {
+    if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
+        // Configure adaptive strategy for virtualization workloads
+        tlb_manager.set_optimization_strategy(
+            crate::arch::riscv64::mmu::tlb::TlbOptimizationStrategy::Adaptive
+        );
+
+        // Configure coalescing for better VM isolation
+        let coalescing_config = crate::arch::riscv64::mmu::tlb::TlbCoalescingConfig {
+            enabled: true,
+            min_entries: 16, // Higher threshold for virtualization
+            max_coalesced_size: 128 * 1024, // 128KB for VM workloads
+            hit_rate_threshold: 90.0, // Higher threshold for VM workloads
+        };
+        tlb_manager.update_coalescing_config(coalescing_config);
+
+        // Configure prefetching for VM access patterns
+        let prefetch_config = crate::arch::riscv64::mmu::tlb::TlbPrefetchConfig {
+            enabled: true,
+            prefetch_distance: 8, // Aggressive prefetch for VM memory access
+            prefetch_threshold: 2, // Lower threshold for VM workloads
+            max_prefetch_queue: 32, // Larger queue for VM patterns
+        };
+        tlb_manager.update_prefetch_config(prefetch_config);
+
+        crate::info!("TLB optimization configured for virtualization workloads");
+        Ok(())
+    } else {
+        Err(Error::InvalidState)
     }
 }
 
