@@ -13,6 +13,8 @@ pub mod devices;
 pub mod delegation;
 pub mod virtual_csr;
 pub mod vintc;
+pub mod discovery;
+pub mod discovery_manager;
 
 pub use hextension::*;
 pub use vcpu::*;
@@ -20,6 +22,8 @@ pub use vm::*;
 pub use delegation::*;
 pub use virtual_csr::*;
 pub use vintc::*;
+pub use discovery::*;
+pub use discovery_manager::*;
 
 use crate::arch::riscv64::*;
 
@@ -28,6 +32,9 @@ static mut H_EXTENSION: Option<HExtensionManager> = None;
 
 /// Virtual machine manager
 static mut VM_MANAGER: Option<VmManager> = None;
+
+/// Global device discovery manager
+static mut DEVICE_DISCOVERY: Option<RiscvDeviceDiscoveryManager> = None;
 
 /// Initialize virtualization subsystem
 pub fn init() -> Result<(), &'static str> {
@@ -64,6 +71,12 @@ pub fn init() -> Result<(), &'static str> {
         VM_MANAGER = Some(vm_manager);
     }
 
+    // Initialize device discovery manager
+    let discovery_manager = RiscvDeviceDiscoveryManager::new();
+    unsafe {
+        DEVICE_DISCOVERY = Some(discovery_manager);
+    }
+
     log::info!("RISC-V virtualization subsystem initialized successfully");
     Ok(())
 }
@@ -86,6 +99,16 @@ pub fn get_vm_manager() -> Option<&'static VmManager> {
 /// Get mutable reference to global VM manager
 pub fn get_vm_manager_mut() -> Option<&'static mut VmManager> {
     unsafe { VM_MANAGER.as_mut() }
+}
+
+/// Get the global device discovery manager
+pub fn get_device_discovery() -> Option<&'static RiscvDeviceDiscoveryManager> {
+    unsafe { DEVICE_DISCOVERY.as_ref() }
+}
+
+/// Get mutable reference to global device discovery manager
+pub fn get_device_discovery_mut() -> Option<&'static mut RiscvDeviceDiscoveryManager> {
+    unsafe { DEVICE_DISCOVERY.as_mut() }
 }
 
 /// Check if H extension is supported
