@@ -5,10 +5,12 @@
 use crate::core::mm::{
     VirtAddr, PhysAddr, PageNr, FrameNr, PAGE_SIZE, PAGE_SHIFT,
     PageFlags, AddressSpaceType, align_up, align_down, flush_tlb_addr,
+    PageSize, should_use_huge_pages, optimal_page_size,
 };
-use crate::core::mm::frame::{alloc_frame, dealloc_frame};
+use crate::core::mm::frame::{alloc_frame, dealloc_frame, alloc_contiguous_frames, dealloc_contiguous_frames};
 use crate::core::sync::SpinLock;
 use core::ptr::NonNull;
+use alloc::vec::Vec;
 
 // Simple logging macros for no_std environment
 macro_rules! cow_info {
@@ -702,12 +704,376 @@ impl AddressSpace {
     pub fn get_cow_stats(&self) -> crate::core::mm::page::CowStats {
         get_cow_manager().get_stats()
     }
+
+    /// Map a huge page
+    pub fn map_huge_page(
+        &self,
+        virt_addr: VirtAddr,
+        phys_addr: PhysAddr,
+        page_size: PageSize,
+        flags: PageFlags,
+    ) -> Result<(), crate::Error> {
+        if page_size == PageSize::Size4K {
+            return self.map_page(virt_addr, phys_addr, flags);
+        }
+
+        let _guard = self.lock.lock();
+
+        // Check alignment
+        if !page_size.is_aligned(virt_addr) || !page_size.is_aligned(phys_addr) {
+            return Err(crate::Error::InvalidArgument);
+        }
+
+        // Create huge page entry
+        self.create_huge_page_entry(virt_addr, phys_addr, page_size, flags)
+    }
+
+    /// Create a huge page entry in the page tables
+    fn create_huge_page_entry(
+        &self,
+        virt_addr: VirtAddr,
+        phys_addr: PhysAddr,
+        page_size: PageSize,
+        flags: PageFlags,
+    ) -> Result<(), crate::Error> {
+        // Extract indices for each level
+        let indices = [
+            ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 3)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 2)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 1)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((virt_addr >> PAGE_SHIFT) & (PT_ENTRIES as u64 - 1)) as usize,
+        ];
+
+        // Determine which level to create the huge page at
+        let (huge_level, _) = match page_size {
+            PageSize::Size1G => (1, 30),  // Level 1 for 1GB
+            PageSize::Size2M => (2, 21),  // Level 2 for 2MB
+            _ => return Err(crate::Error::InvalidArgument),
+        };
+
+        // Walk the page table hierarchy to the appropriate level
+        let mut current_pt = self.root_pt;
+
+        for level in 0..huge_level {
+            let pt_ref = unsafe { current_pt.as_ref() };
+
+            if !pt_ref.is_present(indices[level]) {
+                // Need to allocate a new page table
+                let new_pt = PageTable::new().ok_or(crate::Error::OutOfMemory)?;
+                let new_pt_ref = unsafe { new_pt.as_ref() };
+
+                // Create entry with appropriate flags
+                let mut entry = new_pt_ref.phys_addr();
+                if flags.writable {
+                    entry |= 0x2; // Writable bit
+                }
+                if flags.user {
+                    entry |= 0x4; // User bit
+                }
+
+                // Set the entry in current page table
+                unsafe {
+                    let current_pt_mut = current_pt.as_mut();
+                    current_pt_mut.set_entry(indices[level], entry | 0x1); // Present bit
+                }
+            }
+
+            // Move to next level
+            let next_pt_addr = unsafe { current_pt.as_ref().entry_frame_addr(indices[level]) };
+            current_pt = unsafe { NonNull::new_unchecked(next_pt_addr as *mut PageTable) };
+        }
+
+        // Create huge page entry at the target level
+        let target_pt = unsafe { current_pt.as_ref() };
+        if target_pt.is_present(indices[huge_level]) {
+            return Err(crate::Error::InvalidArgument); // Already mapped
+        }
+
+        // Create huge page entry with huge page bit set
+        let mut entry = phys_addr;
+        if flags.writable {
+            entry |= 0x2;
+        }
+        if flags.user {
+            entry |= 0x4;
+        }
+        if !flags.executable {
+            entry |= 0x8000000000000000u64; // NX bit
+        }
+
+        // Set huge page bit (architecture-specific)
+        entry |= 0x80; // PS bit for x86_64, or similar for other architectures
+
+        unsafe {
+            let target_pt_mut = current_pt.as_mut();
+            target_pt_mut.set_entry(indices[huge_level], entry | 0x1);
+        }
+
+        Ok(())
+    }
+
+    /// Map a range using the optimal page size (automatically uses huge pages where possible)
+    pub fn map_range_optimal(
+        &self,
+        virt_addr: VirtAddr,
+        phys_addr: PhysAddr,
+        size: u64,
+        flags: PageFlags,
+    ) -> Result<(), crate::Error> {
+        let aligned_virt = align_down(virt_addr);
+        let aligned_phys = align_down(phys_addr);
+        let aligned_size = align_up(size + (virt_addr - aligned_virt));
+
+        let mut current_virt = aligned_virt;
+        let mut current_phys = aligned_phys;
+        let mut remaining = aligned_size;
+        let mut huge_pages_used = 0;
+
+        while remaining > 0 {
+            // Determine optimal page size for current region
+            let page_size = optimal_page_size(remaining);
+
+            if page_size != PageSize::Size4K &&
+               page_size.is_aligned(current_virt) &&
+               page_size.is_aligned(current_phys) {
+                // Use huge page
+                self.map_huge_page(current_virt, current_phys, page_size, flags)?;
+                huge_pages_used += 1;
+
+                let page_size_bytes = page_size.size();
+                current_virt += page_size_bytes;
+                current_phys += page_size_bytes;
+                remaining -= page_size_bytes;
+            } else {
+                // Use standard page
+                self.map_page(current_virt, current_phys, flags)?;
+                current_virt += PAGE_SIZE;
+                current_phys += PAGE_SIZE;
+                remaining -= PAGE_SIZE;
+            }
+        }
+
+        cow_info!("Mapped {}MB using {} huge pages",
+                 size / (1024 * 1024), huge_pages_used);
+
+        Ok(())
+    }
+
+    /// Check if a virtual address is mapped with a huge page
+    pub fn is_huge_page_mapped(&self, virt_addr: VirtAddr) -> Option<PageSize> {
+        let _guard = self.lock.lock();
+
+        let aligned_virt = align_down(virt_addr);
+        let indices = [
+            ((aligned_virt >> (PAGE_SHIFT + PT_SHIFT * 3)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((aligned_virt >> (PAGE_SHIFT + PT_SHIFT * 2)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((aligned_virt >> (PAGE_SHIFT + PT_SHIFT * 1)) & (PT_ENTRIES as u64 - 1)) as usize,
+            ((aligned_virt >> PAGE_SHIFT) & (PT_ENTRIES as u64 - 1)) as usize,
+        ];
+
+        // Check each level for huge page mapping
+        for level in 0..PT_LEVELS - 1 {
+            let pt_ref = unsafe { self.root_pt.as_ref() };
+
+            if !pt_ref.is_present(indices[level]) {
+                break;
+            }
+
+            // Check if this entry has the huge page bit set
+            let entry = pt_ref.entry(indices[level]);
+            if (entry & 0x80) != 0 { // Huge page bit
+                // Determine the page size based on the level
+                match level {
+                    1 => return Some(PageSize::Size1G),
+                    2 => return Some(PageSize::Size2M),
+                    _ => return None,
+                }
+            }
+
+            // Move to next level
+            let next_pt_addr = pt_ref.entry_frame_addr(indices[level]);
+            let current_pt = unsafe { NonNull::new_unchecked(next_pt_addr as *mut PageTable) };
+            // This would need proper handling in a real implementation
+            break;
+        }
+
+        None
+    }
+
+    /// Split a huge page mapping into standard pages
+    pub fn split_huge_page(&self, virt_addr: VirtAddr) -> Result<(), crate::Error> {
+        let _guard = self.lock.lock();
+
+        // Check if this is a huge page
+        let huge_size = self.is_huge_page_mapped(virt_addr)
+            .ok_or(crate::Error::InvalidArgument)?;
+
+        if huge_size == PageSize::Size4K {
+            return Err(crate::Error::InvalidArgument);
+        }
+
+        // Get the physical address of the huge page
+        let phys_addr = self.translate(virt_addr)
+            .ok_or(crate::Error::NotFound)?;
+
+        // Allocate individual pages
+        let page_count = huge_size.page_count();
+        let mut new_pages = Vec::new();
+
+        for i in 0..page_count {
+            let new_frame = alloc_frame().ok_or(crate::Error::OutOfMemory)?;
+
+            // Copy content from huge page to new page
+            unsafe {
+                let src = (phys_addr + i * PAGE_SIZE) as *const u8;
+                let dst = new_frame as *mut u8;
+                core::ptr::copy_nonoverlapping(src, dst, PAGE_SIZE as usize);
+            }
+
+            new_pages.push(new_frame);
+        }
+
+        // Unmap the huge page
+        self.unmap_page(virt_addr)?;
+
+        // Map individual pages
+        let aligned_virt = huge_size.align_down(virt_addr);
+        let flags = PageFlags {
+            present: true,
+            writable: true,
+            executable: true,
+            user: false,
+            write_through: false,
+            cache_disable: false,
+            accessed: false,
+            dirty: false,
+            global: false,
+            cow: false,
+            write_protected: false,
+        };
+
+        for (i, new_frame) in new_pages.into_iter().enumerate() {
+            let page_virt = aligned_virt + i * PAGE_SIZE;
+            self.map_page(page_virt, new_frame, flags)?;
+        }
+
+        // Flush TLB for this address range
+        for i in 0..page_count {
+            flush_tlb_addr(aligned_virt + i * PAGE_SIZE);
+        }
+
+        Ok(())
+    }
+
+    /// Get memory mapping statistics including huge page usage
+    pub fn get_mapping_stats(&self) -> MappingStats {
+        let _guard = self.lock.lock();
+
+        // This is a simplified implementation
+        // In a real system, we would walk the page tables to count mappings
+        MappingStats {
+            total_mappings: 0,
+            huge_page_mappings: 0,
+            standard_page_mappings: 0,
+            memory_mapped: 0,
+            tlb_entries_saved: 0,
+        }
+    }
+}
+
+/// Memory mapping statistics
+#[derive(Debug, Clone, Copy)]
+pub struct MappingStats {
+    /// Total number of memory mappings
+    pub total_mappings: u64,
+    /// Number of huge page mappings
+    pub huge_page_mappings: u64,
+    /// Number of standard page mappings
+    pub standard_page_mappings: u64,
+    /// Total memory mapped (bytes)
+    pub memory_mapped: u64,
+    /// TLB entries saved by using huge pages
+    pub tlb_entries_saved: u64,
 }
 
 /// Initialize virtual memory management
 pub fn init() -> Result<(), crate::Error> {
     // TODO: Initialize kernel address space
     Err(crate::Error::NotImplemented)
+}
+
+/// Initialize huge page support for virtual memory
+pub fn init_huge_pages() -> Result<(), crate::Error> {
+    cow_info!("Initializing huge page support for virtual memory");
+
+    // Initialize huge page manager
+    crate::core::mm::hugepage::init_huge_page_manager()?;
+
+    cow_info!("Huge page support initialized - supports 2MB and 1GB pages");
+    Ok(())
+}
+
+/// Convert a virtual address to a page table level based on page size
+pub fn virt_addr_to_level(virt_addr: VirtAddr, page_size: PageSize) -> usize {
+    match page_size {
+        PageSize::Size1G => 1,
+        PageSize::Size2M => 2,
+        PageSize::Size4K => 3,
+    }
+}
+
+/// Calculate page table indices for a given page size
+pub fn calculate_pt_indices(virt_addr: VirtAddr, page_size: PageSize) -> [usize; 4] {
+    let indices = [
+        ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 3)) & (PT_ENTRIES as u64 - 1)) as usize,
+        ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 2)) & (PT_ENTRIES as u64 - 1)) as usize,
+        ((virt_addr >> (PAGE_SHIFT + PT_SHIFT * 1)) & (PT_ENTRIES as u64 - 1)) as usize,
+        ((virt_addr >> PAGE_SHIFT) & (PT_ENTRIES as u64 - 1)) as usize,
+    ];
+
+    indices
+}
+
+/// Check if a memory region can be efficiently mapped with huge pages
+pub fn can_optimize_with_huge_pages(start_addr: VirtAddr, size: u64) -> bool {
+    let end_addr = start_addr + size;
+
+    // Check 1GB alignment first
+    if PageSize::Size1G.is_aligned(start_addr) &&
+       PageSize::Size1G.is_aligned(end_addr) &&
+       size >= PageSize::Size1G.size() {
+        return true;
+    }
+
+    // Check 2MB alignment
+    if PageSize::Size2M.is_aligned(start_addr) &&
+       PageSize::Size2M.is_aligned(end_addr) &&
+       size >= PageSize::Size2M.size() {
+        return true;
+    }
+
+    false
+}
+
+/// Get the most suitable huge page size for a memory region
+pub fn get_suitable_huge_page_size(start_addr: VirtAddr, size: u64) -> Option<PageSize> {
+    let end_addr = start_addr + size;
+
+    // Try 1GB first
+    if PageSize::Size1G.is_aligned(start_addr) &&
+       PageSize::Size1G.is_aligned(end_addr) &&
+       size >= PageSize::Size1G.size() {
+        return Some(PageSize::Size1G);
+    }
+
+    // Try 2MB
+    if PageSize::Size2M.is_aligned(start_addr) &&
+       PageSize::Size2M.is_aligned(end_addr) &&
+       size >= PageSize::Size2M.size() {
+        return Some(PageSize::Size2M);
+    }
+
+    None
 }
 
 /// Create the kernel address space

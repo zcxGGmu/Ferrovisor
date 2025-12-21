@@ -11,10 +11,13 @@ pub mod heap;
 pub mod slab;
 pub mod buddy;
 pub mod allocator;
+pub mod hugepage;
 
 // Re-export commonly used types
 pub use page::{AddressSpace, AddressSpaceType};
 pub use page::{CowPage, CowStats, CowManager, get_cow_manager, init_cow, handle_write_fault, optimize_memory_sharing};
+pub use hugepage::{HugePage, HugePageManager, HugePageStats, PageSize, default_huge_page_size, default_huge_page_shift};
+pub use hugepage::{get_huge_page_manager, init_huge_page_manager, alloc_huge_page, free_huge_page, can_use_huge_pages, optimize_with_huge_pages};
 
 /// Physical address type
 pub type PhysAddr = u64;
@@ -28,7 +31,7 @@ pub type PageNr = u64;
 /// Frame number type
 pub type FrameNr = u64;
 
-/// Page size (typically 4KB)
+/// Standard page size (4KB)
 pub const PAGE_SIZE: u64 = 4096;
 
 /// Page shift (number of bits for page offset)
@@ -36,6 +39,112 @@ pub const PAGE_SHIFT: u32 = 12;
 
 /// Page mask
 pub const PAGE_MASK: u64 = !(PAGE_SIZE - 1);
+
+/// Huge page sizes supported by the system
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PageSize {
+    /// 4KB standard page
+    Size4K = 12,
+    /// 2MB huge page
+    Size2M = 21,
+    /// 1GB huge page
+    Size1G = 30,
+}
+
+impl PageSize {
+    /// Get the size in bytes
+    pub const fn size(self) -> u64 {
+        match self {
+            PageSize::Size4K => 4 * 1024,
+            PageSize::Size2M => 2 * 1024 * 1024,
+            PageSize::Size1G => 1024 * 1024 * 1024,
+        }
+    }
+
+    /// Get the shift amount
+    pub const fn shift(self) -> u32 {
+        match self {
+            PageSize::Size4K => 12,
+            PageSize::Size2M => 21,
+            PageSize::Size1G => 30,
+        }
+    }
+
+    /// Get the mask for alignment
+    pub const fn mask(self) -> u64 {
+        !(self.size() - 1)
+    }
+
+    /// Check if a size is a valid page size
+    pub fn is_valid(size: u64) -> bool {
+        match size {
+            4096 | 2_097_152 | 1_073_741_824 => true,
+            _ => false,
+        }
+    }
+
+    /// Get the smallest page size that can accommodate the given size
+    pub fn from_size(size: u64) -> Option<Self> {
+        if size <= PageSize::Size4K.size() {
+            Some(PageSize::Size4K)
+        } else if size <= PageSize::Size2M.size() {
+            Some(PageSize::Size2M)
+        } else if size <= PageSize::Size1G.size() {
+            Some(PageSize::Size1G)
+        } else {
+            None
+        }
+    }
+
+    /// Check if an address is aligned to this page size
+    pub fn is_aligned(self, addr: u64) -> bool {
+        (addr & (self.size() - 1)) == 0
+    }
+
+    /// Align an address down to this page size boundary
+    pub const fn align_down(self, addr: u64) -> u64 {
+        addr & self.mask()
+    }
+
+    /// Align an address up to this page size boundary
+    pub const fn align_up(self, addr: u64) -> u64 {
+        (addr + self.size() - 1) & self.mask()
+    }
+
+    /// Get the number of standard pages in this huge page
+    pub const fn page_count(self) -> u64 {
+        self.size() / PAGE_SIZE
+    }
+}
+
+/// Default huge page size (2MB)
+pub const DEFAULT_HUGE_PAGE: PageSize = PageSize::Size2M;
+
+/// Get system default huge page size
+pub const fn default_huge_page_size() -> u64 {
+    DEFAULT_HUGE_PAGE.size()
+}
+
+/// Get system default huge page shift
+pub const fn default_huge_page_shift() -> u32 {
+    DEFAULT_HUGE_PAGE.shift()
+}
+
+/// Check if a size should use huge pages
+pub fn should_use_huge_pages(size: u64) -> bool {
+    size >= DEFAULT_HUGE_PAGE.size()
+}
+
+/// Get the optimal page size for a given allocation size
+pub fn optimal_page_size(size: u64) -> PageSize {
+    if size >= PageSize::Size1G.size() && PageSize::Size1G.is_aligned(size) {
+        PageSize::Size1G
+    } else if size >= PageSize::Size2M.size() && PageSize::Size2M.is_aligned(size) {
+        PageSize::Size2M
+    } else {
+        PageSize::Size4K
+    }
+}
 
 /// Memory region descriptor
 #[derive(Debug, Clone, Copy)]
@@ -211,6 +320,9 @@ pub fn init() -> Result<()> {
 
     // Initialize COW memory management
     page::init_cow().map_err(|_| crate::Error::MemoryError)?;
+
+    // Initialize huge page management
+    hugepage::init_huge_page_manager().map_err(|_| crate::Error::MemoryError)?;
 
     Ok(())
 }

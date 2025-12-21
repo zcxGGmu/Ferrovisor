@@ -290,6 +290,16 @@ pub fn alloc_frames(count: usize) -> Option<PhysAddr> {
     get_frame_allocator().allocate_frames(count)
 }
 
+/// Allocate contiguous frames for huge pages
+pub fn alloc_contiguous_frames(count: u64) -> Option<PhysAddr> {
+    get_frame_allocator().allocate_frames(count as usize)
+}
+
+/// Deallocate contiguous frames
+pub fn dealloc_contiguous_frames(addr: PhysAddr, count: u64) {
+    get_frame_allocator().deallocate_frames(addr, count as usize);
+}
+
 /// Deallocate a physical frame
 pub fn dealloc_frame(addr: PhysAddr) -> bool {
     get_frame_allocator().deallocate_frame(addr)
