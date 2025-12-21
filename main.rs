@@ -6,9 +6,8 @@
 #![no_std]
 #![no_main]
 
-// We need to import from the ferrovisor library
-// This will be resolved when we build as a binary with the lib
-pub use ferrovisor::{init, run, Error};
+// Import from the local ferrovisor library
+use ferrovisor::{init, run, Error};
 
 /// Early entry point for ARM64
 #[cfg(target_arch = "aarch64")]

@@ -6,9 +6,6 @@
 #![no_std]
 #![no_main]
 #![feature(lang_items)]
-#![feature(panic_info_message)]
-#![feature(alloc_error_handler)]
-#![feature(allocator_api)]
 
 extern crate alloc;
 
@@ -19,7 +16,7 @@ pub use alloc::string::String;
 pub use alloc::format;
 
 // Import allocator components
-use core::alloc::{GlobalAlloc, Layout};
+use alloc::alloc::{GlobalAlloc, Layout};
 
 // Global allocator using our unified allocator
 struct FerrovisorAllocator;
@@ -241,8 +238,7 @@ extern "C" fn eh_personality() {
 }
 
 // Alloc error handler
-#[cfg(feature = "allocator")]
 #[alloc_error_handler]
-fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
+fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
     panic!("allocation error: {:?}", layout)
 }
