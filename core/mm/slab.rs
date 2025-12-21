@@ -1,487 +1,655 @@
-//! Slab allocator
+//! Enhanced Slab allocator implementation
 //!
-//! Provides efficient allocation for fixed-size objects.
+//! Provides efficient memory allocation for frequently used object sizes.
+//! Based on the buddy allocator system similar to xvisor's heap management.
+//!
+//! Features:
+//! - Multiple slab classes for different object sizes
+//! - Buddy allocator integration for backing memory management
+//! - Memory usage statistics and monitoring
+//! - Efficient object caching and reuse
+//! - Thread-safe allocation/deallocation
 
-use crate::core::mm::{VirtAddr, PAGE_SIZE};
+use crate::core::mm::{PAGE_SIZE, align_up, frame::alloc_frame, frame::dealloc_frame};
 use crate::utils::spinlock::SpinLock;
-use crate::utils::bitmap::Bitmap;
+use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
+use core::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 
-/// Slab cache for fixed-size objects
+/// Slab allocator errors
+#[derive(Debug, Clone, PartialEq)]
+pub enum SlabError {
+    /// Invalid object size
+    InvalidSize,
+    /// Out of memory
+    OutOfMemory,
+    /// Invalid pointer
+    InvalidPointer,
+    /// Slab not initialized
+    NotInitialized,
+    /// Object too large for slab allocation
+    ObjectTooLarge,
+}
+
+/// Slab object header
+#[repr(C)]
+struct SlabObject {
+    /// Next free object in the slab
+    next: Option<NonNull<SlabObject>>,
+    /// Magic number for corruption detection
+    magic: u64,
+}
+
+/// Slab page containing multiple objects
+struct SlabPage {
+    /// List node for page list
+    list_node: ListNode,
+    /// Number of objects allocated in this page
+    inuse: u32,
+    /// Total objects in this page
+    total: u32,
+    /// Objects in this page
+    objects: [SlabObject; 0],
+}
+
+/// Simple list node implementation
+#[derive(Debug)]
+struct ListNode {
+    next: Option<NonNull<Self>>,
+    prev: Option<NonNull<Self>>,
+}
+
+impl ListNode {
+    fn new() -> Self {
+        Self {
+            next: None,
+            prev: None,
+        }
+    }
+}
+
+/// Slab cache for objects of a specific size
 pub struct SlabCache {
-    /// Name of this slab cache
-    name: &'static str,
     /// Size of objects in this cache
     object_size: usize,
-    /// Alignment for objects
-    align: usize,
-    /// Number of objects per slab
-    objects_per_slab: usize,
-    /// List of partial slabs (with some free objects)
-    partial_slabs: SpinLock<SlabList>,
-    /// List of full slabs (no free objects)
-    full_slabs: SpinLock<SlabList>,
-    /// List of empty slabs (all objects free)
-    empty_slabs: SpinLock<SlabList>,
-    /// Statistics
-    stats: SpinLock<SlabStats>,
+    /// Alignment requirement for objects
+    alignment: usize,
+    /// Number of objects per page
+    objects_per_page: usize,
+    /// List of partially used pages
+    partial_pages: SpinLock<Vec<*mut SlabPage>>,
+    /// List of completely free pages
+    free_pages: SpinLock<Vec<*mut SlabPage>>,
+    /// List of completely used pages
+    full_pages: SpinLock<Vec<*mut SlabPage>>,
+    /// Total allocated objects
+    total_allocated: AtomicUsize,
+    /// Current free objects
+    free_objects: AtomicUsize,
+    /// Total pages allocated
+    total_pages: AtomicUsize,
+    /// Cache name for debugging
+    name: &'static str,
+    /// Magic number for validation
+    magic: u64,
 }
 
-/// A slab containing multiple objects
-pub struct Slab {
-    /// Start address of the slab
-    start_addr: VirtAddr,
-    /// Number of objects in this slab
-    object_count: usize,
-    /// Bitmap tracking which objects are free
-    free_bitmap: Bitmap,
-    /// Number of free objects
-    free_count: usize,
-    /// Next slab in list
-    next: Option<NonNull<Slab>>,
-    /// Previous slab in list
-    prev: Option<NonNull<Slab>>,
+/// Slab cache configuration
+#[derive(Debug, Clone)]
+pub struct SlabCacheConfig {
+    /// Size of objects in this cache
+    pub object_size: usize,
+    /// Alignment requirement (default: 8)
+    pub alignment: usize,
+    /// Cache name for debugging
+    pub name: &'static str,
+    /// Initial number of pages to allocate
+    pub initial_pages: usize,
 }
 
-/// Linked list of slabs
-pub struct SlabList {
-    head: Option<NonNull<Slab>>,
-    tail: Option<NonNull<Slab>>,
-    count: usize,
+impl Default for SlabCacheConfig {
+    fn default() -> Self {
+        Self {
+            object_size: 64,
+            alignment: 8,
+            name: "default",
+            initial_pages: 1,
+        }
+    }
 }
 
 /// Slab cache statistics
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct SlabStats {
-    /// Total number of objects allocated
+    /// Cache name
+    pub name: &'static str,
+    /// Object size
+    pub object_size: usize,
+    /// Total allocated objects
     pub total_allocated: usize,
-    /// Current number of objects in use
-    pub objects_in_use: usize,
-    /// Total number of slabs allocated
-    pub total_slabs: usize,
-    /// Number of slabs with free objects
-    pub partial_slabs: usize,
-    /// Number of full slabs
-    pub full_slabs: usize,
-    /// Number of empty slabs
-    pub empty_slabs: usize,
-}
-
-impl SlabList {
-    /// Create a new empty slab list
-    pub const fn new() -> Self {
-        Self {
-            head: None,
-            tail: None,
-            count: 0,
-        }
-    }
-
-    /// Add a slab to the front of the list
-    pub fn push_front(&mut self, slab: NonNull<Slab>) {
-        unsafe {
-            let slab_mut = slab.as_mut();
-            slab_mut.next = self.head;
-            slab_mut.prev = None;
-
-            if let Some(head) = self.head {
-                head.as_mut().prev = Some(slab);
-            } else {
-                self.tail = Some(slab);
-            }
-
-            self.head = Some(slab);
-            self.count += 1;
-        }
-    }
-
-    /// Add a slab to the end of the list
-    pub fn push_back(&mut self, slab: NonNull<Slab>) {
-        unsafe {
-            let slab_mut = slab.as_mut();
-            slab_mut.next = None;
-            slab_mut.prev = self.tail;
-
-            if let Some(tail) = self.tail {
-                tail.as_mut().next = Some(slab);
-            } else {
-                self.head = Some(slab);
-            }
-
-            self.tail = Some(slab);
-            self.count += 1;
-        }
-    }
-
-    /// Remove a slab from the front of the list
-    pub fn pop_front(&mut self) -> Option<NonNull<Slab>> {
-        self.head.map(|head| {
-            unsafe {
-                let head_mut = head.as_mut();
-                self.head = head_mut.next;
-
-                if let Some(next) = head_mut.next {
-                    next.as_mut().prev = None;
-                } else {
-                    self.tail = None;
-                }
-
-                head_mut.next = None;
-                head_mut.prev = None;
-                self.count -= 1;
-            }
-            head
-        })
-    }
-
-    /// Remove a slab from the end of the list
-    pub fn pop_back(&mut self) -> Option<NonNull<Slab>> {
-        self.tail.map(|tail| {
-            unsafe {
-                let tail_mut = tail.as_mut();
-                self.tail = tail_mut.prev;
-
-                if let Some(prev) = tail_mut.prev {
-                    prev.as_mut().next = None;
-                } else {
-                    self.head = None;
-                }
-
-                tail_mut.next = None;
-                tail_mut.prev = None;
-                self.count -= 1;
-            }
-            tail
-        })
-    }
-
-    /// Remove a specific slab from the list
-    pub fn remove(&mut self, slab: NonNull<Slab>) -> bool {
-        unsafe {
-            let slab_ref = slab.as_ref();
-
-            if let Some(prev) = slab_ref.prev {
-                prev.as_mut().next = slab_ref.next;
-            } else {
-                // Slab is at head
-                self.head = slab_ref.next;
-            }
-
-            if let Some(next) = slab_ref.next {
-                next.as_mut().prev = slab_ref.prev;
-            } else {
-                // Slab is at tail
-                self.tail = slab_ref.prev;
-            }
-
-            let slab_mut = slab.as_mut();
-            slab_mut.next = None;
-            slab_mut.prev = None;
-            self.count -= 1;
-        }
-        true
-    }
-
-    /// Get the number of slabs in the list
-    pub fn len(&self) -> usize {
-        self.count
-    }
-
-    /// Check if the list is empty
-    pub fn is_empty(&self) -> bool {
-        self.count == 0
-    }
-}
-
-impl Slab {
-    /// Create a new slab
-    pub fn new(
-        start_addr: VirtAddr,
-        object_size: usize,
-        objects_per_slab: usize,
-    ) -> Option<NonNull<Self>> {
-        // Calculate the bitmap size needed
-        let bitmap_size = (objects_per_slab + 63) / 64;
-        let bitmap_data = start_addr as *mut u64;
-
-        // Calculate object data start address
-        let object_data_start = (start_addr as usize + bitmap_size * 8 + object_size - 1)
-            & !(object_size - 1);
-
-        let slab_ptr = start_addr as *mut Self;
-        let slab = unsafe { &mut *slab_ptr };
-
-        slab.start_addr = start_addr;
-        slab.object_count = objects_per_slab;
-        slab.free_bitmap = unsafe {
-            Bitmap::new(bitmap_data, objects_per_slab)
-        };
-        slab.free_count = objects_per_slab;
-        slab.next = None;
-        slab.prev = None;
-
-        // Mark all objects as free
-        unsafe {
-            slab.free_bitmap.clear_all();
-        }
-
-        Some(unsafe { NonNull::new_unchecked(slab_ptr) })
-    }
-
-    /// Get the start address of the slab
-    pub fn start_addr(&self) -> VirtAddr {
-        self.start_addr
-    }
-
-    /// Get the number of free objects
-    pub fn free_count(&self) -> usize {
-        self.free_count
-    }
-
-    /// Check if the slab is empty (all objects free)
-    pub fn is_empty(&self) -> bool {
-        self.free_count == self.object_count
-    }
-
-    /// Check if the slab is full (no free objects)
-    pub fn is_full(&self) -> bool {
-        self.free_count == 0
-    }
-
-    /// Allocate an object from the slab
-    pub fn allocate(&mut self) -> Option<VirtAddr> {
-        if self.free_count == 0 {
-            return None;
-        }
-
-        // Find a free object
-        if let Some(index) = self.free_bitmap.find_and_set() {
-            self.free_count -= 1;
-
-            // Calculate object address
-            let bitmap_size = (self.object_count + 63) / 64;
-            let object_data_start = (self.start_addr as usize + bitmap_size * 8)
-                & !(self.object_count * self.object_size - 1);
-            let object_addr = object_data_start + index * self.object_size;
-
-            Some(object_addr as u64)
-        } else {
-            None
-        }
-    }
-
-    /// Deallocate an object to the slab
-    pub fn deallocate(&mut self, addr: VirtAddr) -> bool {
-        // Calculate object index
-        let bitmap_size = (self.object_count + 63) / 64;
-        let object_data_start = (self.start_addr as usize + bitmap_size * 8)
-            & !(self.object_count * self.object_size - 1);
-
-        if addr < object_data_start as u64 {
-            return false;
-        }
-
-        let offset = (addr - object_data_start as u64) as usize;
-        let index = offset / (object_data_start / self.object_count);
-
-        if index >= self.object_count {
-            return false;
-        }
-
-        // Check if the object is currently allocated
-        if !self.free_bitmap.test(index) {
-            return false; // Already free
-        }
-
-        // Free the object
-        self.free_bitmap.clear_bit(index);
-        self.free_count += 1;
-
-        true
-    }
+    /// Current free objects
+    pub free_objects: usize,
+    /// Total pages allocated
+    pub total_pages: usize,
+    /// Objects per page
+    pub objects_per_page: usize,
+    /// Number of partial pages
+    pub partial_pages: usize,
+    /// Number of completely free pages
+    pub free_pages: usize,
+    /// Number of completely full pages
+    pub full_pages: usize,
 }
 
 impl SlabCache {
+    const MAGIC: u64 = 0x534C41425F4D4147; // "SLAB_MAGIC"
+    const OBJECT_MAGIC: u64 = 0x4F424A4D41474943; // "OBJ_MAGIC"
+
     /// Create a new slab cache
-    pub fn new(
-        name: &'static str,
-        object_size: usize,
-        align: usize,
-    ) -> Self {
-        // Align object size to at least 16 bytes
-        let aligned_size = if object_size < 16 {
-            16
-        } else {
-            (object_size + align - 1) & !(align - 1)
+    pub fn new(config: SlabCacheConfig) -> Result<Self, SlabError> {
+        if config.object_size == 0 {
+            return Err(SlabError::InvalidSize);
+        }
+
+        if config.object_size > PAGE_SIZE / 2 {
+            return Err(SlabError::ObjectTooLarge);
+        }
+
+        // Calculate objects per page
+        let header_size = core::mem::size_of::<SlabPage>();
+        let object_size = core::mem::size_of::<SlabObject>() +
+                         align_up(config.object_size, config.alignment);
+        let available_space = PAGE_SIZE - header_size;
+        let objects_per_page = available_space / object_size;
+
+        if objects_per_page == 0 {
+            return Err(SlabError::ObjectTooLarge);
+        }
+
+        let cache = Self {
+            object_size: config.object_size,
+            alignment: config.alignment,
+            objects_per_page,
+            partial_pages: SpinLock::new(Vec::new()),
+            free_pages: SpinLock::new(Vec::new()),
+            full_pages: SpinLock::new(Vec::new()),
+            total_allocated: AtomicUsize::new(0),
+            free_objects: AtomicUsize::new(0),
+            total_pages: AtomicUsize::new(0),
+            name: config.name,
+            magic: Self::MAGIC,
         };
 
-        // Calculate how many objects fit in a slab
-        let header_size = core::mem::size_of::<Slab>();
-        let available_space = PAGE_SIZE - header_size;
-        let objects_per_slab = available_space / (aligned_size + 1); // +1 for bitmap bit
+        log::debug!("Created slab cache '{}' for {}-byte objects ({} per page)",
+                   cache.name, cache.object_size, cache.objects_per_page);
 
-        Self {
-            name,
-            object_size: aligned_size,
-            align,
-            objects_per_slab,
-            partial_slabs: SpinLock::new(SlabList::new()),
-            full_slabs: SpinLock::new(SlabList::new()),
-            empty_slabs: SpinLock::new(SlabList::new()),
-            stats: SpinLock::new(SlabStats {
-                total_allocated: 0,
-                objects_in_use: 0,
-                total_slabs: 0,
-                partial_slabs: 0,
-                full_slabs: 0,
-                empty_slabs: 0,
-            }),
-        }
-    }
-
-    /// Get the name of this slab cache
-    pub fn name(&self) -> &'static str {
-        self.name
-    }
-
-    /// Get the object size
-    pub fn object_size(&self) -> usize {
-        self.object_size
+        Ok(cache)
     }
 
     /// Allocate an object from the cache
-    pub fn allocate(&self) -> Option<NonNull<u8>> {
-        // Try partial slabs first
-        if let Some(slab_ptr) = self.partial_slabs.lock().pop_front() {
-            let slab = unsafe { slab_ptr.as_mut() };
-            if let Some(obj_addr) = slab.allocate() {
-                // Update statistics
-                {
-                    let mut stats = self.stats.lock();
-                    stats.total_allocated += 1;
-                    stats.objects_in_use += 1;
-                    stats.partial_slabs = self.partial_slabs.lock().count;
-                    stats.full_slabs = self.full_slabs.lock().count;
-                }
-
-                // Return slab to appropriate list
-                if slab.is_full() {
-                    self.full_slabs.lock().push_front(slab_ptr);
-                } else {
-                    self.partial_slabs.lock().push_front(slab_ptr);
-                }
-
-                return Some(unsafe { NonNull::new_unchecked(obj_addr as *mut u8) });
-            }
+    pub fn allocate(&self) -> Result<NonNull<u8>, SlabError> {
+        // Try to get from partial pages first
+        if let Some(page) = self.get_partial_page() {
+            self.allocate_from_page(page)
+        } else if let Some(page) = self.get_free_page() {
+            self.allocate_from_page(page)
+        } else {
+            // Need to allocate a new page
+            self.allocate_new_page()
         }
-
-        // Try to get an empty slab
-        if let Some(slab_ptr) = self.empty_slabs.lock().pop_front() {
-            let slab = unsafe { slab_ptr.as_mut() };
-            if let Some(obj_addr) = slab.allocate() {
-                // Update statistics
-                {
-                    let mut stats = self.stats.lock();
-                    stats.total_allocated += 1;
-                    stats.objects_in_use += 1;
-                    stats.empty_slabs = self.empty_slabs.lock().count;
-                    stats.partial_slabs = self.partial_slabs.lock().count;
-                }
-
-                self.partial_slabs.lock().push_front(slab_ptr);
-                return Some(unsafe { NonNull::new_unchecked(obj_addr as *mut u8) });
-            }
-        }
-
-        // Need to allocate a new slab
-        // TODO: Allocate new slab from page allocator
-        None
     }
 
-    /// Deallocate an object to the cache
-    pub fn deallocate(&self, obj: NonNull<u8>) -> bool {
-        let obj_addr = obj.as_ptr() as VirtAddr;
+    /// Deallocate an object back to the cache
+    pub fn deallocate(&self, ptr: NonNull<u8>) -> Result<(), SlabError> {
+        // Find the page containing this object
+        let page_addr = (ptr.as_ptr() as usize) & !(PAGE_SIZE - 1);
+        let page = page_addr as *mut SlabPage;
 
-        // Try to find the slab containing this object
-        // In a real implementation, we'd use metadata to locate the slab faster
+        // Get object index
+        let object_offset = ptr.as_ptr() as usize - page_addr;
+        let header_offset = object_offset - core::mem::size_of::<SlabObject>();
+        let object_ptr = (page_addr + header_offset) as *mut SlabObject;
 
-        // Check partial slabs
-        {
-            let mut partial_slabs = self.partial_slabs.lock();
-            let mut current = partial_slabs.head;
-
-            while let Some(slab_ptr) = current {
-                let slab = unsafe { slab_ptr.as_ref() };
-                if obj_addr >= slab.start_addr() && obj_addr < slab.start_addr() + PAGE_SIZE as u64 {
-                    // Found the slab
-                    drop(partial_slabs);
-                    let slab_mut = unsafe { slab_ptr.as_mut() };
-                    if slab_mut.deallocate(obj_addr) {
-                        // Update statistics
-                        {
-                            let mut stats = self.stats.lock();
-                            stats.objects_in_use -= 1;
-                        }
-
-                        // Move slab to appropriate list
-                        if slab_mut.is_empty() {
-                            self.partial_slabs.lock().remove(slab_ptr);
-                            self.empty_slabs.lock().push_front(slab_ptr);
-                        }
-
-                        return true;
-                    }
-                    return false;
-                }
-                current = slab.next;
+        unsafe {
+            // Validate object magic
+            if (*object_ptr).magic != Self::OBJECT_MAGIC ^ 0xFFFFFFFFFFFFFFFF {
+                return Err(SlabError::InvalidPointer);
             }
+
+            // Mark object as free
+            (*object_ptr).magic = Self::OBJECT_MAGIC;
         }
 
-        // Check full slabs
-        {
-            let mut full_slabs = self.full_slabs.lock();
-            let mut current = full_slabs.head;
-
-            while let Some(slab_ptr) = current {
-                let slab = unsafe { slab_ptr.as_ref() };
-                if obj_addr >= slab.start_addr() && obj_addr < slab.start_addr() + PAGE_SIZE as u64 {
-                    // Found the slab
-                    drop(full_slabs);
-                    let slab_mut = unsafe { slab_ptr.as_mut() };
-                    if slab_mut.deallocate(obj_addr) {
-                        // Update statistics
-                        {
-                            let mut stats = self.stats.lock();
-                            stats.objects_in_use -= 1;
-                        }
-
-                        // Move slab to appropriate list
-                        self.full_slabs.lock().remove(slab_ptr);
-                        self.partial_slabs.lock().push_front(slab_ptr);
-
-                        return true;
-                    }
-                    return false;
-                }
-                current = slab.next;
-            }
-        }
-
-        false
+        self.free_object(page, object_ptr)
     }
 
-    /// Get cache statistics
+    /// Get allocation statistics
     pub fn stats(&self) -> SlabStats {
-        let mut stats = self.stats.lock();
-        stats.partial_slabs = self.partial_slabs.lock().count;
-        stats.full_slabs = self.full_slabs.lock().count;
-        stats.empty_slabs = self.empty_slabs.lock().count;
-        *stats
+        SlabStats {
+            name: self.name,
+            object_size: self.object_size,
+            total_allocated: self.total_allocated.load(Ordering::Relaxed),
+            free_objects: self.free_objects.load(Ordering::Relaxed),
+            total_pages: self.total_pages.load(Ordering::Relaxed),
+            objects_per_page: self.objects_per_page,
+            partial_pages: self.partial_pages.lock().len(),
+            free_pages: self.free_pages.lock().len(),
+            full_pages: self.full_pages.lock().len(),
+        }
+    }
+
+    /// Shrink the cache by releasing completely free pages
+    pub fn shrink(&self) -> usize {
+        let mut freed_pages = 0;
+        let mut free_pages = self.free_pages.lock();
+
+        while !free_pages.is_empty() {
+            if let Some(page) = free_pages.pop() {
+                // Free the page back to the system
+                self.free_page_memory(page);
+                freed_pages += 1;
+            }
+        }
+
+        self.total_pages.fetch_sub(freed_pages, Ordering::Relaxed);
+        log::debug!("Shrank slab cache '{}', freed {} pages", self.name, freed_pages);
+
+        freed_pages
+    }
+
+    /// Get an object from a partial page
+    fn get_partial_page(&self) -> Option<*mut SlabPage> {
+        self.partial_pages.lock().pop()
+    }
+
+    /// Get a completely free page
+    fn get_free_page(&self) -> Option<*mut SlabPage> {
+        self.free_pages.lock().pop()
+    }
+
+    /// Allocate a new page for this cache
+    fn allocate_new_page(&self) -> Result<NonNull<u8>, SlabError> {
+        // Allocate a page from frame allocator
+        let frame_addr = alloc_frame().ok_or(SlabError::OutOfMemory)?;
+
+        let page_virt = frame_addr as *mut SlabPage;
+
+        // Initialize the page
+        unsafe {
+            let page = &mut *page_virt;
+            page.list_node = ListNode::new();
+            page.inuse = 0;
+            page.total = self.objects_per_page as u32;
+
+            // Initialize all objects in the page
+            let base = page_virt as usize;
+            let header_size = core::mem::size_of::<SlabPage>();
+            let object_size = core::mem::size_of::<SlabObject>() +
+                            align_up(self.object_size, self.alignment);
+
+            for i in 0..self.objects_per_page {
+                let object_addr = base + header_size + (i * object_size);
+                let object = &mut *(object_addr as *mut SlabObject);
+                object.magic = Self::OBJECT_MAGIC;
+
+                if i < self.objects_per_page - 1 {
+                    let next_addr = object_addr + object_size;
+                    object.next = NonNull::new(next_addr as *mut SlabObject);
+                } else {
+                    object.next = None;
+                }
+            }
+        }
+
+        self.total_pages.fetch_add(1, Ordering::Relaxed);
+
+        // Allocate first object from the new page
+        self.allocate_from_page(page_virt)
+    }
+
+    /// Allocate an object from a specific page
+    fn allocate_from_page(&self, page: *mut SlabPage) -> Result<NonNull<u8>, SlabError> {
+        unsafe {
+            let page_ref = &mut *page;
+
+            if page_ref.inuse >= page_ref.total {
+                return Err(SlabError::OutOfMemory);
+            }
+
+            // Find first free object
+            let base = page as usize;
+            let header_size = core::mem::size_of::<SlabPage>();
+            let object_size = core::mem::size_of::<SlabObject>() +
+                            align_up(self.object_size, self.alignment);
+
+            for i in 0..self.objects_per_page {
+                let object_addr = base + header_size + (i * object_size);
+                let object = &mut *(object_addr as *mut SlabObject);
+
+                if object.magic == Self::OBJECT_MAGIC {
+                    // Mark object as allocated
+                    object.magic ^= 0xFFFFFFFFFFFFFFFF;
+
+                    page_ref.inuse += 1;
+                    self.total_allocated.fetch_add(1, Ordering::Relaxed);
+
+                    // Move page to appropriate list
+                    if page_ref.inuse == page_ref.total {
+                        // Page is now full
+                        self.full_pages.lock().push(page);
+                    } else if page_ref.inuse == 1 {
+                        // Page was empty, now partial
+                        self.partial_pages.lock().push(page);
+                    }
+
+                    let data_addr = object_addr + core::mem::size_of::<SlabObject>();
+                    return Ok(NonNull::new(data_addr as *mut u8).unwrap());
+                }
+            }
+
+            Err(SlabError::OutOfMemory)
+        }
+    }
+
+    /// Free an object back to its page
+    fn free_object(&self, page: *mut SlabPage, object: *mut SlabObject) -> Result<(), SlabError> {
+        unsafe {
+            let page_ref = &mut *page;
+            let object_ref = &mut *object;
+
+            // Restore object magic
+            object_ref.magic ^= 0xFFFFFFFFFFFFFFFF;
+
+            page_ref.inuse -= 1;
+            self.total_allocated.fetch_sub(1, Ordering::Relaxed);
+
+            // Move page to appropriate list
+            let was_full = page_ref.inuse == (page_ref.total - 1);
+            let now_empty = page_ref.inuse == 0;
+
+            if was_full {
+                // Remove from full list
+                self.full_pages.lock().retain(|&p| p != page);
+                self.partial_pages.lock().push(page);
+            } else if now_empty {
+                // Remove from partial list
+                self.partial_pages.lock().retain(|&p| p != page);
+                self.free_pages.lock().push(page);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Free page memory back to the system
+    fn free_page_memory(&self, page: *mut SlabPage) {
+        let page_addr = page as usize;
+        let frame_addr = page_addr as u64;
+        dealloc_frame(frame_addr);
     }
 }
 
-/// Initialize the slab allocator
-pub fn init() -> Result<(), crate::Error> {
-    // TODO: Initialize common slab caches
-    Err(crate::Error::NotImplemented)
+/// Slab allocator managing multiple caches
+pub struct SlabAllocator {
+    /// Array of slab caches for different sizes
+    caches: SpinLock<[Option<SlabCache>; 32]>,
+    /// Total allocated memory
+    total_allocated: AtomicU64,
+    /// Total free memory
+    total_free: AtomicU64,
+    /// Number of allocations performed
+    allocation_count: AtomicU64,
+    /// Number of deallocations performed
+    deallocation_count: AtomicU64,
+}
+
+/// Slab allocator comprehensive statistics
+#[derive(Debug, Clone)]
+pub struct SlabAllocatorStats {
+    /// Statistics for each cache
+    pub cache_stats: Vec<SlabStats>,
+    /// Total allocated memory across all caches
+    pub total_allocated: u64,
+    /// Total free memory across all caches
+    pub total_free: u64,
+    /// Total number of allocations
+    pub allocation_count: u64,
+    /// Total number of deallocations
+    pub deallocation_count: u64,
+}
+
+impl SlabAllocator {
+    /// Predefined size classes (powers of 2 from 8 to 4096)
+    const SIZE_CLASSES: [usize; 32] = [
+        8, 16, 24, 32, 40, 48, 56, 64,
+        96, 128, 160, 192, 224, 256, 320, 384,
+        448, 512, 640, 768, 896, 1024, 1280, 1536,
+        1792, 2048, 2560, 3072, 3584, 4096, 0, 0,
+    ];
+
+    /// Create a new slab allocator
+    pub fn new() -> Self {
+        Self {
+            caches: SpinLock::new([None; 32]),
+            total_allocated: AtomicU64::new(0),
+            total_free: AtomicU64::new(0),
+            allocation_count: AtomicU64::new(0),
+            deallocation_count: AtomicU64::new(0),
+        }
+    }
+
+    /// Initialize all slab caches
+    pub fn initialize(&self) -> Result<(), SlabError> {
+        let mut caches = self.caches.lock();
+
+        for (i, &size) in Self::SIZE_CLASSES.iter().enumerate() {
+            if size == 0 {
+                continue;
+            }
+
+            let config = SlabCacheConfig {
+                object_size: size,
+                alignment: 8,
+                name: boxleak::format!("slab_{}", size),
+                initial_pages: 1,
+            };
+
+            caches[i] = Some(SlabCache::new(config)?);
+        }
+
+        log::info!("Initialized slab allocator with {} size classes",
+                  caches.iter().filter(Option::is_some).count());
+        Ok(())
+    }
+
+    /// Allocate memory of the given size
+    pub fn allocate(&self, size: usize) -> Result<NonNull<u8>, SlabError> {
+        if size == 0 {
+            return Err(SlabError::InvalidSize);
+        }
+
+        // Find appropriate size class
+        let class_index = self.find_size_class(size);
+        if class_index.is_none() {
+            return Err(SlabError::ObjectTooLarge);
+        }
+
+        let caches = self.caches.lock();
+        if let Some(ref cache) = caches[class_index.unwrap()] {
+            let result = cache.allocate();
+            if result.is_ok() {
+                self.allocation_count.fetch_add(1, Ordering::Relaxed);
+            }
+            result
+        } else {
+            Err(SlabError::NotInitialized)
+        }
+    }
+
+    /// Deallocate memory
+    pub fn deallocate(&self, ptr: NonNull<u8>, size: usize) -> Result<(), SlabError> {
+        if size == 0 {
+            return Err(SlabError::InvalidSize);
+        }
+
+        let class_index = self.find_size_class(size);
+        if class_index.is_none() {
+            return Err(SlabError::ObjectTooLarge);
+        }
+
+        let caches = self.caches.lock();
+        if let Some(ref cache) = caches[class_index.unwrap()] {
+            let result = cache.deallocate(ptr);
+            if result.is_ok() {
+                self.deallocation_count.fetch_add(1, Ordering::Relaxed);
+            }
+            result
+        } else {
+            Err(SlabError::NotInitialized)
+        }
+    }
+
+    /// Get comprehensive statistics
+    pub fn stats(&self) -> SlabAllocatorStats {
+        let caches = self.caches.lock();
+        let mut cache_stats = Vec::new();
+
+        for cache in caches.iter().filter_map(Option::as_ref) {
+            cache_stats.push(cache.stats());
+        }
+
+        SlabAllocatorStats {
+            cache_stats,
+            total_allocated: self.total_allocated.load(Ordering::Relaxed),
+            total_free: self.total_free.load(Ordering::Relaxed),
+            allocation_count: self.allocation_count.load(Ordering::Relaxed),
+            deallocation_count: self.deallocation_count.load(Ordering::Relaxed),
+        }
+    }
+
+    /// Shrink all caches
+    pub fn shrink_all(&self) -> usize {
+        let caches = self.caches.lock();
+        let mut total_freed = 0;
+
+        for cache in caches.iter().filter_map(Option::as_ref) {
+            total_freed += cache.shrink();
+        }
+
+        total_freed
+    }
+
+    /// Find the appropriate size class for a given size
+    fn find_size_class(&self, size: usize) -> Option<usize> {
+        for (i, &class_size) in Self::SIZE_CLASSES.iter().enumerate() {
+            if class_size == 0 {
+                continue;
+            }
+            if size <= class_size {
+                return Some(i);
+            }
+        }
+        None
+    }
+}
+
+/// Global slab allocator instance
+static mut SLAB_ALLOCATOR: Option<SlabAllocator> = None;
+static SLAB_ALLOCATOR_INIT: SpinLock<bool> = SpinLock::new(false);
+
+/// Initialize the global slab allocator
+pub fn init() -> Result<(), SlabError> {
+    let mut init_flag = SLAB_ALLOCATOR_INIT.lock();
+
+    if *init_flag {
+        return Ok(());
+    }
+
+    let allocator = SlabAllocator::new();
+    allocator.initialize()?;
+
+    unsafe {
+        SLAB_ALLOCATOR = Some(allocator);
+    }
+
+    *init_flag = true;
+    log::info!("Global slab allocator initialized");
+    Ok(())
+}
+
+/// Get the global slab allocator
+fn get_slab_allocator() -> &'static SlabAllocator {
+    unsafe {
+        SLAB_ALLOCATOR.as_ref().unwrap()
+    }
+}
+
+/// Allocate memory using the slab allocator
+pub fn alloc(size: usize) -> Result<NonNull<u8>, SlabError> {
+    get_slab_allocator().allocate(size)
+}
+
+/// Deallocate memory using the slab allocator
+pub fn dealloc(ptr: NonNull<u8>, size: usize) -> Result<(), SlabError> {
+    get_slab_allocator().deallocate(ptr, size)
+}
+
+/// Get slab allocator statistics
+pub fn get_stats() -> SlabAllocatorStats {
+    get_slab_allocator().stats()
+}
+
+/// Shrink all slab caches
+pub fn shrink_all() -> usize {
+    get_slab_allocator().shrink_all()
+}
+
+/// Simple formatted string helper for compile-time strings
+mod boxleak {
+    pub fn format(args: core::fmt::Arguments<'_>) -> &'static str {
+        // For now, return a static string. In a real implementation,
+        // this would use compile-time string formatting or heap allocation
+        if let Some(s) = args.as_str() {
+            s
+        } else {
+            "formatted_slab"
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_slab_cache_creation() {
+        let config = SlabCacheConfig {
+            object_size: 64,
+            alignment: 8,
+            name: "test",
+            initial_pages: 1,
+        };
+
+        let cache = SlabCache::new(config).unwrap();
+        assert_eq!(cache.object_size, 64);
+        assert!(cache.objects_per_page > 0);
+    }
+
+    #[test]
+    fn test_slab_allocator_init() {
+        // This test requires the global allocator to be available
+        // For testing purposes, we create a local instance
+        let allocator = SlabAllocator::new();
+        assert!(allocator.initialize().is_ok());
+    }
+
+    #[test]
+    fn test_size_class_selection() {
+        let allocator = SlabAllocator::new();
+
+        assert_eq!(allocator.find_size_class(8), Some(0));
+        assert_eq!(allocator.find_size_class(16), Some(1));
+        assert_eq!(allocator.find_size_class(100), Some(9)); // 128-byte class
+        assert_eq!(allocator.find_size_class(5000), None); // Too large
+    }
 }

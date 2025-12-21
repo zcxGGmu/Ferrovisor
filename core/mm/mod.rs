@@ -9,6 +9,8 @@ pub mod frame;
 pub mod page;
 pub mod heap;
 pub mod slab;
+pub mod buddy;
+pub mod allocator;
 
 /// Physical address type
 pub type PhysAddr = u64;
@@ -146,8 +148,15 @@ pub fn init() -> Result<()> {
     // Initialize heap allocator
     heap::init()?;
 
+    // Initialize buddy allocator
+    buddy::init(0x80000000, 64 * 1024 * 1024) // 64MB starting at 2GB
+        .map_err(|_| crate::Error::MemoryError)?;
+
     // Initialize slab allocator
-    slab::init()?;
+    slab::init().map_err(|_| crate::Error::MemoryError)?;
+
+    // Initialize unified allocator
+    allocator::init().map_err(|_| crate::Error::MemoryError)?;
 
     Ok(())
 }
