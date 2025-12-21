@@ -14,6 +14,11 @@ pub mod handler;
 pub mod exception;
 pub mod msi;
 
+// Re-export commonly used types
+pub use chip::{Plic, Aplic, Imsic, AplicSourceCfg, AplicMsiConfig, ImsicGlobalConfig, ImsicLocalConfig};
+pub use chip::{AplicStats, ImsicStats, create_aplic, create_imsic, init_nextgen_interrupts};
+pub use msi::{MsiAddress, MsiController, MsiXController, MsiXVector, create_msi_controller, create_msix_controller};
+
 /// Interrupt number type
 pub type IrqNumber = u32;
 
@@ -124,6 +129,8 @@ pub struct IrqManager {
     irq_bitmap: SpinLock<Bitmap>,
     /// Statistics
     stats: SpinLock<IrqStats>,
+    /// Platform interrupt controller
+    controller: SpinLock<Option<Box<dyn InterruptController>>>,
 }
 
 /// IRQ statistics
@@ -148,6 +155,25 @@ impl IrqManager {
             descriptors: SpinLock::new([None; 1024]),
             irq_bitmap: SpinLock::new(unsafe { Bitmap::new(core::ptr::null_mut(), 1024) }),
             stats: SpinLock::new(IrqStats::default()),
+            controller: SpinLock::new(None),
+        }
+    }
+
+    /// Set the platform interrupt controller
+    pub fn set_controller(&self, controller: Box<dyn InterruptController>) {
+        *self.controller.lock() = Some(controller);
+    }
+
+    /// Get a reference to the interrupt controller
+    pub fn with_controller<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut dyn InterruptController) -> R,
+    {
+        let mut controller = self.controller.lock();
+        if let Some(ref mut ctrl) = *controller {
+            Some(f(ctrl.as_mut()))
+        } else {
+            None
         }
     }
 

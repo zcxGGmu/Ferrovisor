@@ -4,11 +4,31 @@
 //! enabling direct interrupt delivery through memory writes.
 
 use crate::{Result, Error};
-use crate::core::irq::{IrqNumber, Priority};
+use crate::core::irq::IrqNumber;
 use crate::core::mm::{PhysAddr, VirtAddr, PAGE_SIZE};
-use crate::arch::common::MmioAccess;
 use crate::core::sync::SpinLock;
 use alloc::vec::Vec;
+use alloc::boxed::Box;
+
+/// Simple volatile memory access helper
+fn read_volatile_u32(addr: VirtAddr) -> u32 {
+    unsafe { core::ptr::read_volatile(addr as *const u32) }
+}
+
+/// Simple volatile memory write helper
+fn write_volatile_u32(addr: VirtAddr, value: u32) {
+    unsafe { core::ptr::write_volatile(addr as *mut u32, value) }
+}
+
+/// Simple volatile memory access helper for 64-bit
+fn read_volatile_u64(addr: VirtAddr) -> u64 {
+    unsafe { core::ptr::read_volatile(addr as *const u64) }
+}
+
+/// Simple volatile memory write helper for 64-bit
+fn write_volatile_u64(addr: VirtAddr, value: u64) {
+    unsafe { core::ptr::write_volatile(addr as *mut u64, value) }
+}
 
 /// MSI address format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -230,11 +250,11 @@ impl MsiController for SimpleMsiController {
         }
 
         // Write MSI data to trigger interrupt
-        let mmio = MmioAccess;
+        // Using direct volatile access
 
         if msi_addr.is_64bit {
             // For 64-bit MSI, write the address first
-            mmio.write_u64(self.mmio_base + msi_addr.offset() as u64, msi_addr.addr);
+            write_volatile_u64(self.mmio_base + msi_addr.offset() as u64, msi_addr.addr);
         }
 
         // Write the MSI data to trigger the interrupt
@@ -244,7 +264,7 @@ impl MsiController for SimpleMsiController {
             msi_addr.offset()
         };
 
-        mmio.write_u32(self.mmio_base + data_offset as u64, msi_addr.data);
+        write_volatile_u32(self.mmio_base + data_offset as u64, msi_addr.data);
 
         Ok(())
     }
@@ -326,9 +346,9 @@ impl MsiXController {
         vectors.resize(self.num_vectors as usize, MsiXVector::new(0, 0, 0)).unwrap();
 
         // Initialize pending table
-        let mmio = MmioAccess;
+        // Using direct volatile access
         for i in 0..self.num_vectors {
-            mmio.write_u32(self.pending_base + (i * 4) as u64, 0);
+            write_volatile_u32(self.pending_base + (i * 4) as u64, 0);
         }
 
         Ok(())
@@ -345,19 +365,19 @@ impl MsiXController {
 
         // Update the table entry
         let table_offset = vector * 16; // Each MSI-X entry is 16 bytes
-        let mmio = MmioAccess;
+        // Using direct volatile access
 
         // Write lower 32 bits of address
-        mmio.write_u32(self.table_base + table_offset as u64, (address & 0xFFFFFFFF) as u32);
+        write_volatile_u32(self.table_base + table_offset as u64, (address & 0xFFFFFFFF) as u32);
 
         // Write upper 32 bits of address
-        mmio.write_u32(self.table_base + (table_offset + 4) as u64, ((address >> 32) & 0xFFFFFFFF) as u32);
+        write_volatile_u32(self.table_base + (table_offset + 4) as u64, ((address >> 32) & 0xFFFFFFFF) as u32);
 
         // Write data
-        mmio.write_u32(self.table_base + (table_offset + 8) as u64, data);
+        write_volatile_u32(self.table_base + (table_offset + 8) as u64, data);
 
         // Write vector control (unmasked)
-        mmio.write_u32(self.table_base + (table_offset + 12) as u64, 0);
+        write_volatile_u32(self.table_base + (table_offset + 12) as u64, 0);
 
         Ok(())
     }
@@ -373,9 +393,9 @@ impl MsiXController {
 
         // Update table entry
         let table_offset = vector * 16;
-        let mmio = MmioAccess;
+        // Using direct volatile access
         let control = if masked { 1 } else { 0 };
-        mmio.write_u32(self.table_base + (table_offset + 12) as u64, control);
+        write_volatile_u32(self.table_base + (table_offset + 12) as u64, control);
 
         Ok(())
     }
@@ -394,10 +414,10 @@ impl MsiXController {
         }
 
         // Set pending bit
-        let mmio = MmioAccess;
+        // Using direct volatile access
         let pending_offset = vector * 4;
         let pending_bit = 1 << (vector % 32);
-        mmio.write_u32(self.pending_base + pending_offset as u64, pending_bit);
+        write_volatile_u32(self.pending_base + pending_offset as u64, pending_bit);
 
         // In a real implementation, this would trigger the interrupt through the MSI-X mechanism
         crate::debug!("Triggering MSI-X vector {}", vector);
@@ -411,8 +431,8 @@ impl MsiXController {
             return false;
         }
 
-        let mmio = MmioAccess;
-        let pending_value = mmio.read_u32(self.pending_base + (vector * 4) as u64);
+        // Using direct volatile access
+        let pending_value = read_volatile_u32(self.pending_base + (vector * 4) as u64);
         (pending_value & (1 << (vector % 32))) != 0
     }
 
@@ -422,9 +442,9 @@ impl MsiXController {
             return Err(Error::InvalidArgument);
         }
 
-        let mmio = MmioAccess;
+        // Using direct volatile access
         let pending_offset = vector * 4;
-        mmio.write_u32(self.pending_base + pending_offset as u64, 0);
+        write_volatile_u32(self.pending_base + pending_offset as u64, 0);
 
         Ok(())
     }
