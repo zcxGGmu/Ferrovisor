@@ -3,7 +3,7 @@
 <div align="center">
 
 <p align="center">
-  <img src="assets/logos/logo-zh-simple.svg" alt="Ferrovisor Logo" width="200" height="200">
+  <img src="assets/logos/logo-ferro-zh.svg" alt="Ferrovisor Logo" width="200" height="200">
 </p>
 
 <a href="README.md">

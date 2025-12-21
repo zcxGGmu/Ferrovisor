@@ -98,7 +98,46 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 - 保留品牌识别度
 ```
 
-### 10. **logo-favicon.svg** - 图标版本
+### 10. **logo-ferro-modern.svg** - Ferro主题现代版本 ⭐新推荐
+```
+特点：
+- 体现"Ferro"（铁）的坚固质感
+- 金属立方体设计，象征稳定可靠
+- Rust橙色安全指示器和徽章
+- "Rust-Secured · Iron-Clad"标语
+- 突出Rust安全性和铁的坚固性
+推荐**主要使用**这个版本
+```
+
+### 11. **logo-ferro.svg** - Ferro盾牌版本
+```
+特点：
+- 盾牌形状体现安全保护
+- 金属质感表现铁的特性
+- Rust橙色"F"字母和绿色安全勾
+- 传统与现代结合的设计
+```
+
+### 12. **logo-atomic.svg** - 原子结构版本
+```
+特点：
+- 原子结构表现技术精密性
+- 中心"Fe"原子核（铁元素符号）
+- Rust橙色电子轨道象征安全保护
+- 科技感十足的设计
+```
+
+### 13. **logo-ferro-zh.svg** - 中文Ferro版本
+```
+特点：
+- 中文"铁"字作为核心元素
+- 金属质感背景板
+- Rust橙色渲染和绿色安全徽章
+- "钢铁之坚 · Rust之安"标语
+适合中文文档使用
+```
+
+### 14. **logo-favicon.svg** - 图标版本
 ```
 特点：
 - 32x32像素优化
@@ -112,27 +151,32 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 
 | 版本 | 使用场景 | 文件格式 |
 |------|----------|----------|
-| logo-clean | 主要品牌标识、网站头部 ⭐推荐 | SVG/PNG |
+| logo-ferro-modern | 主要品牌标识、网站头部 ⭐推荐 | SVG/PNG |
+| logo-ferro-zh | 中文文档、README.zh-CN | SVG/PNG |
+| logo-ferro | 安全技术文档、演示 | SVG/PNG |
+| logo-atomic | 技术展示、架构说明 | SVG/PNG |
+| logo-clean | 简洁场景、快速识别 | SVG/PNG |
 | logo-simple | 需要图形元素的场景 | SVG/PNG |
 | logo-minimal-new | 小尺寸显示、图标化 | SVG/PNG |
-| logo-zh-simple | 中文文档、README.zh-CN | SVG/PNG |
-| logo-universal | 技术展示、架构说明 | SVG/PNG |
+| logo-zh-simple | 备用中文版本 | SVG/PNG |
+| logo-universal | 传统技术展示 | SVG/PNG |
 | logo-multiarch | 详细架构文档 | SVG/PNG |
-| logo-modern | 传统品牌标识、演示材料 | SVG/PNG |
+| logo-modern | 传统品牌标识 | SVG/PNG |
 | logo-minimal | 技术文档、代码仓库 | SVG/PNG |
 | logo | 传统文档、打印材料 | SVG/PNG |
 | favicon | 网站图标、浏览器标签 | PNG |
 
 ### 颜色规范
 
-- **主色调**：`#667eea` → `#764ba2` → `#f093fb` (紫色渐变)
-- **金属色**：`#f5f7fa` → `#c3cfe2` (银色渐变)
-- **架构色彩**：
-  - RISC-V: `#667eea` (蓝紫色)
-  - ARM64: `#e74c3c` (红色)
-  - x86_64: `#3498db` (蓝色)
-- **虚拟化层**：`#764ba2` (深紫色)
-- **文字**：`#ffffff` (白色)
+- **Ferro主题色**：
+  - 金属渐变：`#e5e7eb` → `#9ca3af` → `#4b5563` (铁灰色)
+  - Rust安全色：`#f97316` → `#dc2626` (Rust橙色)
+  - 安全认证：`#22c55e` (绿色)
+- **传统色调**：
+  - 主渐变：`#667eea` → `#764ba2` → `#f093fb` (紫色渐变)
+  - 金属色：`#f5f7fa` → `#c3cfe2` (银色渐变)
+- **文字**：`#ffffff` (白色主要文字)
+- **背景**：`#1e293b` → `#0f172a` (深蓝灰色)
 
 ### 尺寸建议
 
@@ -144,29 +188,47 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 ## 文件列表
 
 ```
-├── logo.svg            # 经典版本 (SVG)
-├── logo.png            # 经典版本 (PNG)
-├── logo-minimal.svg    # 简约版本 (SVG)
-├── logo-minimal.png    # 简约版本 (PNG)
-├── logo-modern.svg     # 现代版本 (SVG)
-├── logo-modern.png     # 现代版本 (PNG)
-├── logo-clean.svg      # 简洁版本 (SVG) ⭐新推荐
-├── logo-clean.png      # 简洁版本 (PNG) ⭐新推荐
-├── logo-simple.svg     # 简单图形版本 (SVG) - 新增
-├── logo-simple.png     # 简单图形版本 (PNG) - 新增
-├── logo-minimal-new.svg # 极简字母版本 (SVG) - 新增
-├── logo-minimal-new.png # 极简字母版本 (PNG) - 新增
-├── logo-zh-simple.svg  # 简洁中文版本 (SVG) - 新增
-├── logo-zh-simple.png  # 简洁中文版本 (PNG) - 新增
-├── logo-multiarch.svg  # 多架构版本 (SVG)
-├── logo-multiarch.png  # 多架构版本 (PNG)
-├── logo-universal.svg  # 通用架构版本 (SVG)
-├── logo-universal.png  # 通用架构版本 (PNG)
-├── logo-zh.svg         # 中文版本 (SVG)
-├── logo-zh.png         # 中文版本 (PNG)
-├── logo-favicon.svg    # 图标版本 (SVG)
-├── favicon.png         # 图标版本 (PNG)
-└── LOGO.md             # 本文档
+├── logo.svg              # 经典版本 (SVG)
+├── logo.png              # 经典版本 (PNG)
+├── logo-minimal.svg      # 简约版本 (SVG)
+├── logo-minimal.png      # 简约版本 (PNG)
+├── logo-modern.svg       # 现代版本 (SVG)
+├── logo-modern.png       # 现代版本 (PNG)
+
+# Ferro主题版本 - 新增 ⭐
+├── logo-ferro-modern.svg # Ferro现代版本 (SVG) ⭐推荐
+├── logo-ferro-modern.png # Ferro现代版本 (PNG) ⭐推荐
+├── logo-ferro.svg        # Ferro盾牌版本 (SVG)
+├── logo-ferro.png        # Ferro盾牌版本 (PNG)
+├── logo-ferro-zh.svg     # Ferro中文版本 (SVG)
+├── logo-ferro-zh.png     # Ferro中文版本 (PNG)
+├── logo-atomic.svg       # 原子结构版本 (SVG)
+├── logo-atomic.png       # 原子结构版本 (PNG)
+
+# 简洁版本
+├── logo-clean.svg        # 简洁版本 (SVG)
+├── logo-clean.png        # 简洁版本 (PNG)
+├── logo-simple.svg       # 简单图形版本 (SVG)
+├── logo-simple.png       # 简单图形版本 (PNG)
+├── logo-minimal-new.svg  # 极简字母版本 (SVG)
+├── logo-minimal-new.png  # 极简字母版本 (PNG)
+
+# 中文版本
+├── logo-zh.svg           # 中文版本 (SVG)
+├── logo-zh.png           # 中文版本 (PNG)
+├── logo-zh-simple.svg    # 简洁中文版本 (SVG)
+├── logo-zh-simple.png    # 简洁中文版本 (PNG)
+
+# 架构版本
+├── logo-multiarch.svg    # 多架构版本 (SVG)
+├── logo-multiarch.png    # 多架构版本 (PNG)
+├── logo-universal.svg    # 通用架构版本 (SVG)
+├── logo-universal.png    # 通用架构版本 (PNG)
+
+# 图标版本
+├── logo-favicon.svg      # 图标版本 (SVG)
+├── favicon.png           # 图标版本 (PNG)
+└── LOGO.md               # 本文档
 ```
 
 ## 版权说明
@@ -175,5 +237,5 @@ Ferrovisor 项目图标遵循项目的开源许可证 (Apache-2.0)。
 
 ---
 
-**Ferrovisor** - Multi-Architecture Hypervisor Project
-*坚固的虚拟化，可靠的性能，跨平台的兼容性*
+**Ferrovisor** - Rust-Secured Iron-Clad Hypervisor
+*钢铁之坚，Rust之安，多架构之兼容*

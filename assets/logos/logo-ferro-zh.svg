@@ -1,0 +1,71 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Define gradients -->
+  <defs>
+    <!-- Iron/metallic gradient -->
+    <linearGradient id="ironMetalZh" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e5e7eb;stop-opacity:1" />
+      <stop offset="25%" style="stop-color:#d1d5db;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#9ca3af;stop-opacity:1" />
+      <stop offset="75%" style="stop-color:#6b7280;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#4b5563;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Rust safety gradient -->
+    <linearGradient id="rustSafetyZh" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f97316;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#dc2626;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Background gradient -->
+    <radialGradient id="bgGradientZh">
+      <stop offset="0%" style="stop-color:#1e293b;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#0f172a;stop-opacity:1" />
+    </radialGradient>
+
+    <!-- Glow effect -->
+    <filter id="glowZh">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Dark background -->
+  <rect width="200" height="200" rx="25" fill="url(#bgGradientZh)"/>
+
+  <!-- Central iron character -->
+  <g transform="translate(100, 80)">
+    <!-- Iron plate background -->
+    <rect x="-40" y="-30" width="80" height="60" rx="5"
+          fill="url(#ironMetalZh)" stroke="#ffffff" stroke-width="1"/>
+
+    <!-- Chinese character for Iron -->
+    <text x="0" y="10" text-anchor="middle" fill="url(#rustSafetyZh)"
+          font-family="SimHei, Arial, sans-serif" font-size="36" font-weight="bold" filter="url(#glowZh)">
+      铁
+    </text>
+
+    <!-- Safety shield -->
+    <circle cx="30" cy="-15" r="8" fill="#22c55e" stroke="#ffffff" stroke-width="2"/>
+    <path d="M 26,-15 L 29,-12 L 34,-17"
+          fill="none"
+          stroke="#ffffff"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Ferrovisor text -->
+  <text x="100" y="145" text-anchor="middle" fill="#ffffff"
+        font-family="Arial, sans-serif" font-size="18" font-weight="bold">
+    Ferrovisor
+  </text>
+
+  <!-- Chinese safety tagline -->
+  <text x="100" y="165" text-anchor="middle" fill="#f97316"
+        font-family="SimHei, Arial, sans-serif" font-size="11">
+    钢铁之坚 · Rust之安
+  </text>
+</svg>

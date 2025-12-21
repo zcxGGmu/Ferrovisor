@@ -1,0 +1,75 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Define gradients for iron/metal effect and Rust safety -->
+  <defs>
+    <!-- Iron/metal gradient -->
+    <linearGradient id="ironGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#c0c5ce;stop-opacity:1" />
+      <stop offset="30%" style="stop-color:#a8b2bd;stop-opacity:1" />
+      <stop offset="70%" style="stop-color:#89939f;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#6b7280;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Rust orange safety gradient -->
+    <linearGradient id="rustGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#ce422b;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#dc4831;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f97316;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Shield background gradient -->
+    <radialGradient id="shieldGradient">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:0.9" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </radialGradient>
+
+    <!-- Iron texture pattern -->
+    <pattern id="ironTexture" x="0" y="0" width="4" height="4" patternUnits="userSpaceOnUse">
+      <rect width="4" height="4" fill="#a8b2bd"/>
+      <circle cx="1" cy="1" r="0.3" fill="#89939f" opacity="0.3"/>
+      <circle cx="3" cy="3" r="0.3" fill="#89939f" opacity="0.3"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" rx="25" fill="url(#shieldGradient)"/>
+
+  <!-- Iron shield shape with F letter -->
+  <g transform="translate(100, 100)">
+    <!-- Shield outline -->
+    <path d="M 0,-70 L 50,-50 L 50,20 L 0,60 L -50,20 L -50,-50 Z"
+          fill="url(#ironGradient)"
+          stroke="#ffffff"
+          stroke-width="2"/>
+
+    <!-- Iron texture overlay -->
+    <path d="M 0,-70 L 50,-50 L 50,20 L 0,60 L -50,20 L -50,-50 Z"
+          fill="url(#ironTexture)"
+          opacity="0.3"/>
+
+    <!-- Rust F letter in center -->
+    <text x="0" y="15" text-anchor="middle" fill="url(#rustGradient)"
+          font-family="Arial, sans-serif" font-size="48" font-weight="bold">
+      F
+    </text>
+
+    <!-- Safety checkmark -->
+    <path d="M 25,-10 L 30,-5 L 40,-15"
+          fill="none"
+          stroke="#22c55e"
+          stroke-width="3"
+          stroke-linecap="round"
+          stroke-linejoin="round"/>
+  </g>
+
+  <!-- Ferrovisor text below shield -->
+  <text x="100" y="165" text-anchor="middle" fill="#ffffff"
+        font-family="Arial, sans-serif" font-size="18" font-weight="bold">
+    Ferrovisor
+  </text>
+
+  <!-- Safety tagline -->
+  <text x="100" y="185" text-anchor="middle" fill="#ffffff" opacity="0.8"
+        font-family="Arial, sans-serif" font-size="10">
+    Secure by Rust
+  </text>
+</svg>
