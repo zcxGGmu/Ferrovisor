@@ -15,6 +15,9 @@ pub mod virtual_csr;
 pub mod vintc;
 pub mod discovery;
 pub mod discovery_manager;
+pub mod virtio_framework;
+pub mod virtio_driver;
+pub mod virtio_manager;
 
 pub use hextension::*;
 pub use vcpu::*;
@@ -24,6 +27,9 @@ pub use virtual_csr::*;
 pub use vintc::*;
 pub use discovery::*;
 pub use discovery_manager::*;
+pub use virtio_framework::*;
+pub use virtio_driver::*;
+pub use virtio_manager::*;
 
 use crate::arch::riscv64::*;
 
@@ -35,6 +41,9 @@ static mut VM_MANAGER: Option<VmManager> = None;
 
 /// Global device discovery manager
 static mut DEVICE_DISCOVERY: Option<RiscvDeviceDiscoveryManager> = None;
+
+/// Global VirtIO manager
+static mut VIRTIO_MANAGER: Option<VirtIOManager> = None;
 
 /// Initialize virtualization subsystem
 pub fn init() -> Result<(), &'static str> {
@@ -72,9 +81,22 @@ pub fn init() -> Result<(), &'static str> {
     }
 
     // Initialize device discovery manager
-    let discovery_manager = RiscvDeviceDiscoveryManager::new();
+    let mut discovery_manager = RiscvDeviceDiscoveryManager::new();
     unsafe {
         DEVICE_DISCOVERY = Some(discovery_manager);
+    }
+
+    // Initialize VirtIO manager
+    let virtio_config = VirtIOManagerConfig::default();
+    let mut virtio_manager = VirtIOManager::new(virtio_config);
+
+    // Link VirtIO manager with discovery manager
+    if let Some(dm) = unsafe { DEVICE_DISCOVERY.as_mut() } {
+        virtio_manager.set_discovery_manager(dm);
+    }
+
+    unsafe {
+        VIRTIO_MANAGER = Some(virtio_manager);
     }
 
     log::info!("RISC-V virtualization subsystem initialized successfully");
@@ -109,6 +131,16 @@ pub fn get_device_discovery() -> Option<&'static RiscvDeviceDiscoveryManager> {
 /// Get mutable reference to global device discovery manager
 pub fn get_device_discovery_mut() -> Option<&'static mut RiscvDeviceDiscoveryManager> {
     unsafe { DEVICE_DISCOVERY.as_mut() }
+}
+
+/// Get the global VirtIO manager
+pub fn get_virtio_manager() -> Option<&'static VirtIOManager> {
+    unsafe { VIRTIO_MANAGER.as_ref() }
+}
+
+/// Get mutable reference to global VirtIO manager
+pub fn get_virtio_manager_mut() -> Option<&'static mut VirtIOManager> {
+    unsafe { VIRTIO_MANAGER.as_mut() }
 }
 
 /// Check if H extension is supported
