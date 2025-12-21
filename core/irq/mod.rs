@@ -21,8 +21,6 @@ pub use chip::{AplicStats, ImsicStats, create_aplic, create_imsic, init_nextgen_
 pub use msi::{MsiAddress, MsiController, MsiXController, MsiXVector, create_msi_controller, create_msix_controller};
 pub use affinity::{InterruptAffinityManager, CpuMask, CpuTopology, AffinityHints, LoadBalanceStrategy};
 pub use affinity::{CpuIrqStats, SystemIrqStats, init as init_affinity, get as get_affinity_manager};
-// Re-export handler and descriptor types
-pub use {IrqManager, InterruptDescriptor, InterruptHandler};
 
 /// Interrupt number type
 pub type IrqNumber = u32;

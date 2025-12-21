@@ -156,6 +156,166 @@ pub enum GStageMode {
     Sv57X4,
 }
 
+/// Hardware capability information for G-stage translation
+#[derive(Debug, Clone)]
+pub struct GStageCapabilities {
+    /// Supported page table formats
+    pub supported_modes: Vec<GStageMode>,
+    /// Maximum supported VMID bits
+    pub max_vmid_bits: u32,
+    /// Support for extended PTE format
+    pub extended_pte: bool,
+    /// Support for hardware page table walk
+    pub hw_walk: bool,
+    /// Support for virtualization extensions
+    pub virtualization: bool,
+    /// Support for huge pages at G-stage
+    pub huge_pages: bool,
+    /// Supported huge page sizes
+    pub supported_huge_sizes: Vec<u64>,
+}
+
+impl GStageCapabilities {
+    /// Detect hardware capabilities
+    pub fn detect() -> Self {
+        let mut supported_modes = Vec::new();
+
+        // Base Sv39X4 is always supported on RISC-V 64-bit
+        supported_modes.push(GStageMode::Sv39X4);
+
+        // Check for extended modes based on hardware detection
+        #[cfg(target_arch = "riscv64")]
+        {
+            // In a real implementation, this would read actual hardware registers
+            // For now, assume we support the common modes
+            supported_modes.push(GStageMode::Sv48X4);
+
+            // Sv57X4 support detection (would check specific hardware bits)
+            // supported_modes.push(GStageMode::Sv57X4);
+
+            // Sv32X4 is for 32-bit systems, but detect anyway
+            // supported_modes.push(GStageMode::Sv32X4);
+        }
+
+        let mut supported_huge_sizes = Vec::new();
+        supported_huge_sizes.push(2 * 1024 * 1024); // 2MB
+        supported_huge_sizes.push(1024 * 1024 * 1024); // 1GB
+
+        Self {
+            supported_modes,
+            max_vmid_bits: 7, // Standard is 7 bits (0-127)
+            extended_pte: true, // Modern RISC-V supports extended PTE
+            hw_walk: true, // Hardware page table walk support
+            virtualization: true, // H-extension present
+            huge_pages: true, // Huge page support
+            supported_huge_sizes,
+        }
+    }
+
+    /// Check if a mode is supported
+    pub fn supports_mode(&self, mode: GStageMode) -> bool {
+        self.supported_modes.contains(&mode)
+    }
+
+    /// Get the best supported mode
+    pub fn best_mode(&self) -> GStageMode {
+        // Return the highest supported mode
+        for &mode in &[GStageMode::Sv57X4, GStageMode::Sv48X4, GStageMode::Sv39X4, GStageMode::Sv32X4] {
+            if self.supports_mode(mode) {
+                return mode;
+            }
+        }
+        GStageMode::None
+    }
+
+    /// Check if huge page size is supported
+    pub fn supports_huge_size(&self, size: u64) -> bool {
+        self.supported_huge_sizes.contains(&size)
+    }
+}
+
+/// Address space layout for different G-stage modes
+#[derive(Debug, Clone)]
+pub struct GStageAddressSpace {
+    /// Mode for this address space
+    pub mode: GStageMode,
+    /// Base address of the address space
+    pub base: VirtAddr,
+    /// Size of the address space
+    pub size: u64,
+    /// Number of levels
+    pub levels: u32,
+    /// Bits per level
+    pub bits_per_level: u32,
+    /// Physical address bits
+    pub pa_bits: u32,
+    /// Virtual address bits
+    pub va_bits: u32,
+}
+
+impl GStageAddressSpace {
+    /// Create address space layout for a mode
+    pub fn for_mode(mode: GStageMode) -> Self {
+        match mode {
+            GStageMode::None => Self {
+                mode,
+                base: 0,
+                size: 0,
+                levels: 0,
+                bits_per_level: 0,
+                pa_bits: 0,
+                va_bits: 0,
+            },
+            GStageMode::Sv32X4 => Self {
+                mode,
+                base: 0,
+                size: 1u64 << 32,
+                levels: 2,
+                bits_per_level: 10,
+                pa_bits: 34, // Standard for RV32
+                va_bits: 32,
+            },
+            GStageMode::Sv39X4 => Self {
+                mode,
+                base: 0,
+                size: 1u64 << 39,
+                levels: 3,
+                bits_per_level: 9,
+                pa_bits: 56, // Standard for RV64
+                va_bits: 39,
+            },
+            GStageMode::Sv48X4 => Self {
+                mode,
+                base: 0,
+                size: 1u64 << 48,
+                levels: 4,
+                bits_per_level: 9,
+                pa_bits: 56, // Standard for RV64
+                va_bits: 48,
+            },
+            GStageMode::Sv57X4 => Self {
+                mode,
+                base: 0,
+                size: 1u64 << 57,
+                levels: 5,
+                bits_per_level: 9,
+                pa_bits: 56, // Standard for RV64
+                va_bits: 57,
+            },
+        }
+    }
+
+    /// Check if an address is within this address space
+    pub fn contains(&self, addr: VirtAddr) -> bool {
+        addr >= self.base && addr < (self.base + self.size)
+    }
+
+    /// Get the maximum supported address
+    pub fn max_address(&self) -> VirtAddr {
+        self.base + self.size - 1
+    }
+}
+
 impl GStageMode {
     /// Get the number of virtual address bits
     pub const fn va_bits(&self) -> u32 {
@@ -270,7 +430,7 @@ impl GStagePageTable {
         pa: PhysAddr,
         va: VirtAddr,
     ) -> Self {
-        let entry_count = 512; // RISC-V page tables have 512 entries
+        let entry_count = Self::entries_per_level_for_mode(mode);
         Self {
             pa,
             va,
@@ -283,21 +443,134 @@ impl GStagePageTable {
         }
     }
 
+    /// Get the number of entries per level for a specific mode
+    pub fn entries_per_level_for_mode(mode: GStageMode) -> usize {
+        match mode {
+            GStageMode::Sv32X4 => 1024, // 2^10 entries
+            GStageMode::Sv39X4 | GStageMode::Sv48X4 | GStageMode::Sv57X4 => 512, // 2^9 entries
+            GStageMode::None => 0,
+        }
+    }
+
     /// Get the number of entries per level
     pub fn entries_per_level(&self) -> usize {
-        512 // RISC-V standard: 512 entries per level
+        Self::entries_per_level_for_mode(self.mode)
+    }
+
+    /// Get the virtual bits per level for a specific mode
+    pub fn bits_per_level_for_mode(mode: GStageMode) -> u32 {
+        match mode {
+            GStageMode::Sv32X4 => 10,
+            GStageMode::Sv39X4 | GStageMode::Sv48X4 | GStageMode::Sv57X4 => 9,
+            GStageMode::None => 0,
+        }
     }
 
     /// Get the virtual bits per level
     pub fn bits_per_level(&self) -> u32 {
-        9 // log2(512) = 9
+        Self::bits_per_level_for_mode(self.mode)
+    }
+
+    /// Get the address space layout for this page table's mode
+    pub fn address_space(&self) -> GStageAddressSpace {
+        GStageAddressSpace::for_mode(self.mode)
+    }
+
+    /// Check if this level can use huge pages
+    pub fn can_use_huge_pages(&self, level: GStageLevel) -> bool {
+        match self.mode {
+            GStageMode::Sv32X4 => level.index() >= 1, // Superpage (4MB) at level 1
+            GStageMode::Sv39X4 => level.index() >= 2, // Superpage (2MB) at level 2
+            GStageMode::Sv48X4 => level.index() >= 2, // Superpage (2MB) at level 2
+            GStageMode::Sv57X4 => level.index() >= 2, // Superpage (2MB) at level 2
+            GStageMode::None => false,
+        }
+    }
+
+    /// Get huge page size for this level
+    pub fn huge_page_size(&self, level: GStageLevel) -> Option<u64> {
+        if !self.can_use_huge_pages(level) {
+            return None;
+        }
+
+        let bits_per_level = self.bits_per_level();
+        let remaining_levels = self.mode.levels() - level.index() as u32 - 1;
+        let page_bits = PAGE_SHIFT + (bits_per_level * remaining_levels);
+
+        Some(1u64 << page_bits)
+    }
+
+    /// Check if an address is aligned to huge page boundary at this level
+    pub fn is_huge_aligned(&self, gpa: Gpa, level: GStageLevel) -> bool {
+        if let Some(huge_size) = self.huge_page_size(level) {
+            (gpa & (huge_size - 1)) == 0
+        } else {
+            false
+        }
     }
 
     /// Extract VPN for a given level
     pub fn extract_vpn(&self, gpa: Gpa, level: GStageLevel) -> usize {
-        let vpn_shift = PAGE_SHIFT + (self.bits_per_level() * (self.mode.levels() as u32 - level.index() as u32 - 1));
-        let vpn = (gpa >> vpn_shift) & ((1u64 << self.bits_per_level()) - 1);
+        let address_space = self.address_space();
+
+        // Check if GPA is within address space
+        if !address_space.contains(gpa) {
+            return 0; // Invalid address
+        }
+
+        let vpn_shift = PAGE_SHIFT + (address_space.bits_per_level * (address_space.levels - level.index() as u32 - 1));
+        let vpn_mask = (1u64 << address_space.bits_per_level) - 1;
+        let vpn = (gpa >> vpn_shift) & vpn_mask;
+
         vpn as usize
+    }
+
+    /// Extract multiple VPNs for different levels (optimized extraction)
+    pub fn extract_vpns(&self, gpa: Gpa) -> Vec<usize> {
+        let address_space = self.address_space();
+        let mut vpns = Vec::with_capacity(address_space.levels as usize);
+        let bits_per_level = address_space.bits_per_level;
+
+        for level in 0..address_space.levels {
+            let level_idx = address_space.levels - level - 1;
+            let vpn_shift = PAGE_SHIFT + (bits_per_level * level);
+            let vpn_mask = (1u64 << bits_per_level) - 1;
+            let vpn = ((gpa >> vpn_shift) & vpn_mask) as usize;
+            vpns.push(vpn);
+        }
+
+        vpns
+    }
+
+    /// Create next level page table if needed
+    pub fn create_child_table(&self, level: GStageLevel, index: usize) -> Result<Box<GStagePageTable>> {
+        if level.index() >= (self.mode.levels() as usize - 1) {
+            return Err(Error::InvalidArgument); // Can't create child at leaf level
+        }
+
+        // Allocate physical frame for child page table
+        let child_pa = crate::core::mm::frame::alloc_frame()
+            .ok_or(Error::OutOfMemory)?;
+        let child_va = crate::core::mm::frame::phys_to_virt(child_pa);
+
+        let next_level = level.next().ok_or(Error::InvalidArgument)?;
+        let child = Box::new(GStagePageTable::new(
+            next_level,
+            self.vmid,
+            self.mode,
+            child_pa,
+            child_va,
+        ));
+
+        // Update the current PTE to point to child table
+        let child_ppn = child_pa / PAGE_SIZE;
+        let branch_pte = GStagePte::branch(child_ppn);
+        self.set_pte(index, branch_pte)?;
+
+        // Add to children list
+        self.children.lock().push(*child);
+
+        Ok(child)
     }
 
     /// Get PTE at a specific index
@@ -341,8 +614,15 @@ impl GStagePageTable {
         self.ref_count.load(Ordering::Relaxed)
     }
 
-    /// Walk the page table to find or create an entry
+    /// Walk the page table to find or create an entry (multi-format support)
     pub fn walk(&self, gpa: Gpa, create: bool) -> Result<(GStagePte, Option<GStageLevel>)> {
+        let address_space = self.address_space();
+
+        // Check if GPA is within address space
+        if !address_space.contains(gpa) {
+            return Err(Error::InvalidArgument);
+        }
+
         let vpn = self.extract_vpn(gpa, self.level);
         let pte = self.get_pte(vpn)?;
 
@@ -350,10 +630,12 @@ impl GStagePageTable {
             if create {
                 // Need to create next level page table
                 if self.level.index() < (self.mode.levels() as usize - 1) {
-                    return Err(Error::NotImplemented);
+                    let child_table = self.create_child_table(self.level, vpn)?;
+                    // Continue walking in child table
+                    return child_table.walk(gpa, create);
                 } else {
-                    // This is the leaf level, return invalid PTE
-                    return Ok((pte, None));
+                    // This is the leaf level, return invalid PTE for mapping
+                    return Ok((GStagePte::invalid(), Some(self.level)));
                 }
             } else {
                 return Ok((pte, None));
@@ -364,16 +646,84 @@ impl GStagePageTable {
             Ok((pte, Some(self.level)))
         } else {
             // This is a branch, continue walking
+            // In a full implementation, we would load the child table and continue
+            // For now, return the branch PTE
             Ok((pte, Some(self.level)))
         }
     }
 
-    /// Map a GPA to HPA with specified permissions
+    /// Multi-format page table walk with optimized path
+    pub fn walk_multi_format(&self, gpa: Gpa, create: bool) -> Result<(GStagePte, GStageLevel, u64)> {
+        let address_space = self.address_space();
+        let mut current_level = self.level;
+        let mut current_table = self;
+        let mut final_offset = gpa & (PAGE_SIZE - 1);
+
+        // Check if GPA is within address space
+        if !address_space.contains(gpa) {
+            return Err(Error::InvalidArgument);
+        }
+
+        // Walk through each level
+        while current_level.index() < address_space.levels as usize {
+            let vpn = current_table.extract_vpn(gpa, current_level);
+            let pte = current_table.get_pte(vpn)?;
+
+            if !pte.is_valid() {
+                if create && current_level.index() < (address_space.levels as usize - 1) {
+                    // Create child table
+                    let child_table = current_table.create_child_table(current_level, vpn)?;
+                    current_table = &*child_table;
+                    current_level = current_level.next().unwrap();
+                    continue;
+                } else {
+                    // Return invalid PTE at current level for mapping
+                    return Ok((GStagePte::invalid(), current_level, final_offset));
+                }
+            }
+
+            if pte.is_leaf() {
+                // Calculate final offset based on the level where we found the leaf
+                let remaining_levels = address_space.levels - current_level.index() as u32 - 1;
+                let level_size = PAGE_SIZE << (address_space.bits_per_level * remaining_levels);
+                final_offset = gpa & (level_size - 1);
+                return Ok((pte, current_level, final_offset));
+            }
+
+            // Continue to next level
+            if current_level.index() >= (address_space.levels as usize - 1) {
+                return Err(Error::InvalidState); // Branch at leaf level
+            }
+
+            // In a full implementation, load child table here
+            // For now, we can't continue without child table loading
+            return Ok((pte, current_level, final_offset));
+        }
+
+        Err(Error::NotFound)
+    }
+
+    /// Map a GPA to HPA with specified permissions (multi-format with huge page support)
     pub fn map(&self, gpa: Gpa, hpa: Hpa, size: u64, flags: u64) -> Result<()> {
+        let address_space = self.address_space();
+
+        // Check if GPA and HPA are within valid ranges
+        if !address_space.contains(gpa) {
+            return Err(Error::InvalidArgument);
+        }
+
         if !self.is_aligned(gpa, size) || !self.is_aligned(hpa, size) {
             return Err(Error::InvalidArgument);
         }
 
+        // Try to use huge pages if possible
+        if size >= PAGE_SIZE {
+            if let Ok(_) = self.try_map_huge_pages(gpa, hpa, size, flags) {
+                return Ok(());
+            }
+        }
+
+        // Fall back to regular page mapping
         let pages = (size / PAGE_SIZE) as usize;
         for i in 0..pages {
             let current_gpa = gpa + (i as u64 * PAGE_SIZE);
@@ -384,15 +734,128 @@ impl GStagePageTable {
         Ok(())
     }
 
-    /// Map a single page
-    fn map_page(&self, gpa: Gpa, hpa: Hpa, flags: u64) -> Result<()> {
-        // For now, implement simple mapping at leaf level
-        // In a full implementation, this would handle multi-level page tables
+    /// Try to map using huge pages (multi-format support)
+    fn try_map_huge_pages(&self, gpa: Gpa, hpa: Hpa, size: u64, flags: u64) -> Result<()> {
+        let address_space = self.address_space();
+        let mut remaining_size = size;
+        let mut current_gpa = gpa;
+        let mut current_hpa = hpa;
+
+        // Try from largest to smallest huge page size
+        let huge_sizes = [
+            1024 * 1024 * 1024, // 1GB
+            2 * 1024 * 1024,    // 2MB
+        ];
+
+        for huge_size in huge_sizes.iter() {
+            if remaining_size >= *huge_size {
+                // Find the appropriate level for this huge page size
+                if let Some(huge_level) = self.find_level_for_huge_size(*huge_size) {
+                    while remaining_size >= *huge_size {
+                        if self.is_huge_aligned(current_gpa, huge_level) &&
+                           self.is_huge_aligned(current_hpa, huge_level) {
+                            self.map_huge_page(current_gpa, current_hpa, *huge_size, flags, huge_level)?;
+                            current_gpa += *huge_size;
+                            current_hpa += *huge_size;
+                            remaining_size -= *huge_size;
+                        } else {
+                            break; // Can't use this huge page size anymore
+                        }
+                    }
+                }
+            }
+        }
+
+        if remaining_size == 0 {
+            Ok(())
+        } else {
+            Err(Error::InvalidArgument) // Couldn't map everything with huge pages
+        }
+    }
+
+    /// Find the appropriate level for a given huge page size
+    fn find_level_for_huge_size(&self, size: u64) -> Option<GStageLevel> {
+        let address_space = self.address_space();
+        let bits_per_level = address_space.bits_per_level;
+
+        for level_idx in 0..address_space.levels {
+            let level = match level_idx {
+                0 => GStageLevel::Root,
+                1 => GStageLevel::Level1,
+                2 => GStageLevel::Level2,
+                3 => GStageLevel::Level3,
+                4 => GStageLevel::Level4,
+                _ => return None,
+            };
+
+            if let Some(huge_page_size) = self.huge_page_size(level) {
+                if huge_page_size == size {
+                    return Some(level);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Map a huge page at the specified level
+    fn map_huge_page(&self, gpa: Gpa, hpa: Hpa, size: u64, flags: u64, level: GStageLevel) -> Result<()> {
+        // Create page tables down to the huge page level
+        let mut current_table = self;
+        let mut current_level = self.level;
+
+        while current_level.index() < level.index() {
+            let vpn = current_table.extract_vpn(gpa, current_level);
+            let pte = current_table.get_pte(vpn)?;
+
+            if !pte.is_valid() {
+                // Create child table
+                current_table = &*current_table.create_child_table(current_level, vpn)?;
+            } else if pte.is_leaf() {
+                return Err(Error::InvalidState); // Found leaf where we need branch
+            } else {
+                // In a full implementation, load child table here
+                return Err(Error::NotImplemented);
+            }
+
+            current_level = current_level.next().unwrap();
+        }
+
+        // At the huge page level, create the huge page mapping
+        let vpn = current_table.extract_vpn(gpa, level);
         let ppn = hpa / PAGE_SIZE;
         let pte = GStagePte::leaf(ppn, flags);
+        current_table.set_pte(vpn, pte)?;
 
-        let vpn = self.extract_vpn(gpa, self.level);
-        self.set_pte(vpn, pte)?;
+        Ok(())
+    }
+
+    /// Map a single page (multi-format)
+    fn map_page(&self, gpa: Gpa, hpa: Hpa, flags: u64) -> Result<()> {
+        // Use the multi-format walk to find the appropriate location
+        let (pte, level, _) = self.walk_multi_format(gpa, true)?;
+
+        if !pte.is_valid() {
+            // Create the leaf mapping
+            let ppn = hpa / PAGE_SIZE;
+            let leaf_pte = GStagePte::leaf(ppn, flags);
+
+            // Set the PTE at the appropriate level
+            match level {
+                GStageLevel::Root => {
+                    if self.level.index() == level.index() {
+                        let vpn = self.extract_vpn(gpa, level);
+                        self.set_pte(vpn, leaf_pte)?;
+                    }
+                }
+                GStageLevel::Level1 | GStageLevel::Level2 | GStageLevel::Level3 | GStageLevel::Level4 => {
+                    // In a full implementation, we would navigate to the correct child table
+                    // For now, just try to set at current level
+                    let vpn = self.extract_vpn(gpa, level);
+                    self.set_pte(vpn, leaf_pte)?;
+                }
+            }
+        }
 
         Ok(())
     }
@@ -490,30 +953,83 @@ pub struct GStageContext {
     pub vmid: Vmid,
     /// Translation mode
     pub mode: GStageMode,
+    /// Hardware capabilities
+    pub capabilities: GStageCapabilities,
+    /// Address space layout
+    pub address_space: GStageAddressSpace,
     /// Root page table
     pub root: SpinLock<Option<Box<GStagePageTable>>>,
     /// HGATP register value
     pub hgatp: SpinLock<u64>,
     /// Physical address of root page table
     pub root_pa: SpinLock<Option<PhysAddr>>,
+    /// Context statistics
+    pub stats: SpinLock<GStageStats>,
+}
+
+/// G-stage context statistics
+#[derive(Debug, Clone, Default)]
+pub struct GStageStats {
+    /// Number of page tables allocated
+    pub page_tables: u32,
+    /// Number of leaf mappings
+    pub leaf_mappings: u32,
+    /// Number of huge page mappings
+    pub huge_mappings: u32,
+    /// Number of translation walks
+    pub translations: u64,
+    /// Number of translation misses
+    pub translation_misses: u64,
+    /// TLB flush count
+    pub tlb_flushes: u32,
 }
 
 impl GStageContext {
-    /// Create a new G-stage context
-    pub fn new(vmid: Vmid, mode: GStageMode) -> Self {
+    /// Create a new G-stage context with hardware capability detection
+    pub fn new(vmid: Vmid) -> Self {
+        let capabilities = GStageCapabilities::detect();
+        let mode = capabilities.best_mode();
+        let address_space = GStageAddressSpace::for_mode(mode);
+
         Self {
             vmid,
             mode,
+            capabilities,
+            address_space,
             root: SpinLock::new(None),
             hgatp: SpinLock::new(0),
             root_pa: SpinLock::new(None),
+            stats: SpinLock::new(GStageStats::default()),
         }
+    }
+
+    /// Create a new G-stage context with specific mode
+    pub fn new_with_mode(vmid: Vmid, mode: GStageMode) -> Result<Self> {
+        let capabilities = GStageCapabilities::detect();
+
+        if !capabilities.supports_mode(mode) {
+            return Err(Error::InvalidArgument);
+        }
+
+        let address_space = GStageAddressSpace::for_mode(mode);
+
+        Ok(Self {
+            vmid,
+            mode,
+            capabilities,
+            address_space,
+            root: SpinLock::new(None),
+            hgatp: SpinLock::new(0),
+            root_pa: SpinLock::new(None),
+            stats: SpinLock::new(GStageStats::default()),
+        })
     }
 
     /// Initialize the G-stage context
     pub fn init(&mut self) -> Result<()> {
         // Allocate root page table
-        let root_pa = crate::core::mm::frame::alloc_frame()?;
+        let root_pa = crate::core::mm::frame::alloc_frame()
+            .ok_or(Error::OutOfMemory)?;
         let root_va = crate::core::mm::frame::phys_to_virt(root_pa);
 
         let root = Box::new(GStagePageTable::new(
@@ -528,19 +1044,80 @@ impl GStageContext {
         *self.root.lock() = Some(root);
         *self.root_pa.lock() = Some(root_pa);
 
+        // Update statistics
+        {
+            let mut stats = self.stats.lock();
+            stats.page_tables = 1;
+        }
+
         // Configure HGATP register
         self.configure_hgatp()?;
 
-        crate::info!("G-stage context initialized for VMID {}, mode {:?}", self.vmid, self.mode);
+        crate::info!(
+            "G-stage context initialized for VMID {}, mode {:?}, address space: {}GB",
+            self.vmid,
+            self.mode,
+            self.address_space.size / (1024 * 1024 * 1024)
+        );
         Ok(())
     }
 
-    /// Configure HGATP register
+    /// Change the translation mode
+    pub fn change_mode(&mut self, new_mode: GStageMode) -> Result<()> {
+        if !self.capabilities.supports_mode(new_mode) {
+            return Err(Error::InvalidArgument);
+        }
+
+        if self.mode == new_mode {
+            return Ok(()); // No change needed
+        }
+
+        // Save current mappings if needed (complex migration)
+        // For now, just reinitialize with new mode
+        self.mode = new_mode;
+        self.address_space = GStageAddressSpace::for_mode(new_mode);
+
+        // Reinitialize with new mode
+        self.init()?;
+
+        crate::info!("G-stage context mode changed to {:?}", new_mode);
+        Ok(())
+    }
+
+    /// Get context statistics
+    pub fn get_stats(&self) -> GStageStats {
+        *self.stats.lock()
+    }
+
+    /// Reset context statistics
+    pub fn reset_stats(&self) {
+        *self.stats.lock() = GStageStats::default();
+    }
+
+    /// Configure HGATP register for different modes
     fn configure_hgatp(&self) -> Result<()> {
         let root_pa = *self.root_pa.lock();
         if let Some(pa) = root_pa {
             let ppn = pa / PAGE_SIZE;
-            let hgatp = (ppn << 44) | ((self.vmid as u64) << 44) | ((self.mode.hgatp_mode() as u64) << 60);
+
+            // HGATP format depends on the mode
+            let hgatp = match self.mode {
+                GStageMode::Sv32X4 => {
+                    // Sv32X4: [MODE=8] [VMID=10:7] [PPN=31:12]
+                    let vmid_field = ((self.vmid as u64) & 0xF) << 7; // 4 bits at position 7
+                    let ppn_field = (ppn & 0x000FFFFF) << 12; // 20 bits at position 12
+                    let mode_field = 8u64 << 60; // MODE at position 60
+                    mode_field | vmid_field | ppn_field
+                }
+                GStageMode::Sv39X4 | GStageMode::Sv48X4 | GStageMode::Sv57X4 => {
+                    // Sv39X4/Sv48X4/Sv57X4: [MODE] [VMID=25:24] [PPN=43:12]
+                    let vmid_field = ((self.vmid as u64) & 0x3FF) << 24; // 10 bits at position 24
+                    let ppn_field = (ppn & 0x00000FFFFFFFFFFF) << 12; // 32 bits at position 12
+                    let mode_field = (self.mode.hgatp_mode() as u64) << 60; // MODE at position 60
+                    mode_field | vmid_field | ppn_field
+                }
+                GStageMode::None => 0, // Bypass mode
+            };
 
             *self.hgatp.lock() = hgatp;
 
@@ -549,8 +1126,17 @@ impl GStageContext {
             unsafe {
                 // In a real implementation, this would write to HGATP CSR
                 // core::arch::asm!("csrw hgatp, {}", in(reg) hgatp);
+
+                // Also need to update memory management configuration
+                // For example, setting the appropriate bits in menvcfg
+                // let mut menvcfg: u64;
+                // core::arch::asm!("csrr {}, menvcfg", out(reg) menvcfg);
+                // menvcfg |= (1 << 62) // Enable Sv57X4 support if needed
+                // core::arch::asm!("csrw menvcfg, {}", in(reg) menvcfg);
             }
 
+            crate::debug!("HGATP configured for VMID {}, mode {:?}, value: 0x{:x}",
+                         self.vmid, self.mode, hgatp);
             Ok(())
         } else {
             Err(Error::InvalidState)
@@ -582,18 +1168,87 @@ impl GStageContext {
         }
     }
 
-    /// Translate GPA to HPA
+    /// Translate GPA to HPA with multi-format support and statistics
     pub fn translate(&self, gpa: Gpa) -> Result<Hpa> {
+        // Update statistics
+        {
+            let mut stats = self.stats.lock();
+            stats.translations += 1;
+        }
+
+        // Check if GPA is within address space
+        if !self.address_space.contains(gpa) {
+            let mut stats = self.stats.lock();
+            stats.translation_misses += 1;
+            return Err(Error::InvalidArgument);
+        }
+
         let root = self.root.lock();
         if let Some(ref root_table) = *root {
-            root_table.translate(gpa)
+            match root_table.translate(gpa) {
+                Ok(hpa) => Ok(hpa),
+                Err(e) => {
+                    // Update miss statistics
+                    let mut stats = self.stats.lock();
+                    stats.translation_misses += 1;
+                    Err(e)
+                }
+            }
         } else {
+            let mut stats = self.stats.lock();
+            stats.translation_misses += 1;
+            Err(Error::InvalidState)
+        }
+    }
+
+    /// Translate with multi-format optimized walk
+    pub fn translate_optimized(&self, gpa: Gpa) -> Result<Hpa> {
+        // Update statistics
+        {
+            let mut stats = self.stats.lock();
+            stats.translations += 1;
+        }
+
+        // Check if GPA is within address space
+        if !self.address_space.contains(gpa) {
+            let mut stats = self.stats.lock();
+            stats.translation_misses += 1;
+            return Err(Error::InvalidArgument);
+        }
+
+        let root = self.root.lock();
+        if let Some(ref root_table) = *root {
+            match root_table.walk_multi_format(gpa, false) {
+                Ok((pte, level, offset)) => {
+                    if pte.is_valid() && pte.is_leaf() {
+                        let hpa = pte.pa() + offset;
+                        Ok(hpa)
+                    } else {
+                        let mut stats = self.stats.lock();
+                        stats.translation_misses += 1;
+                        Err(Error::NotFound)
+                    }
+                }
+                Err(e) => {
+                    let mut stats = self.stats.lock();
+                    stats.translation_misses += 1;
+                    Err(e)
+                }
+            }
+        } else {
+            let mut stats = self.stats.lock();
+            stats.translation_misses += 1;
             Err(Error::InvalidState)
         }
     }
 
     /// Check permissions for GPA access
     pub fn check_permissions(&self, gpa: Gpa, read: bool, write: bool, execute: bool) -> Result<bool> {
+        // Check if GPA is within address space
+        if !self.address_space.contains(gpa) {
+            return Ok(false);
+        }
+
         let root = self.root.lock();
         if let Some(ref root_table) = *root {
             root_table.check_permissions(gpa, read, write, execute)
@@ -602,12 +1257,50 @@ impl GStageContext {
         }
     }
 
-    /// Flush TLB entries
+    /// Flush TLB entries with statistics tracking
     pub fn flush_tlb(&self, gpa: Option<Gpa>, size: Option<u64>) {
+        // Update statistics
+        {
+            let mut stats = self.stats.lock();
+            stats.tlb_flushes += 1;
+        }
+
         let root = self.root.lock();
         if let Some(ref root_table) = *root {
+            // Use VMID-specific flush if supported by hardware
+            if self.capabilities.hw_walk {
+                crate::debug!("TLB flush for VMID {}, GPA: {:?}, size: {:?}",
+                             self.vmid, gpa, size);
+            }
+
             root_table.flush_tlb(gpa, size);
         }
+
+        // Perform actual hardware TLB flush
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            if let Some(flush_gpa) = gpa {
+                if let Some(flush_size) = size {
+                    // Flush specific range
+                    let pages = flush_size / PAGE_SIZE;
+                    for i in 0..pages {
+                        let addr = flush_gpa + (i * PAGE_SIZE);
+                        core::arch::asm!("sfence.vma {}, {}", in(reg) addr, in(reg) self.vmid);
+                    }
+                } else {
+                    // Flush single address
+                    core::arch::asm!("sfence.vma {}, {}", in(reg) flush_gpa, in(reg) self.vmid);
+                }
+            } else {
+                // Flush all for this VMID
+                core::arch::asm!("sfence.vma {}, {}", in(reg) 0, in(reg) self.vmid);
+            }
+        }
+    }
+
+    /// Flush all TLB entries for this VM
+    pub fn flush_tlb_all(&self) {
+        self.flush_tlb(None, None);
     }
 }
 
@@ -677,10 +1370,10 @@ impl GStageManager {
         }
     }
 
-    /// Create a new G-stage context
-    pub fn create_context(&self, mode: GStageMode) -> Result<Vmid> {
+    /// Create a new G-stage context with automatic mode detection
+    pub fn create_context(&self) -> Result<Vmid> {
         let vmid = self.allocate_vmid()?;
-        let mut context = GStageContext::new(vmid, mode);
+        let mut context = GStageContext::new(vmid);
         context.init()?;
 
         let mut contexts = self.contexts.lock();
@@ -691,6 +1384,27 @@ impl GStageManager {
             self.free_vmid(vmid)?;
             Err(Error::InvalidState)
         }
+    }
+
+    /// Create a new G-stage context with specific mode
+    pub fn create_context_with_mode(&self, mode: GStageMode) -> Result<Vmid> {
+        let vmid = self.allocate_vmid()?;
+        let mut context = GStageContext::new_with_mode(vmid, mode)?;
+        context.init()?;
+
+        let mut contexts = self.contexts.lock();
+        if (vmid as usize) < contexts.len() {
+            contexts[vmid as usize] = Some(context);
+            Ok(vmid)
+        } else {
+            self.free_vmid(vmid)?;
+            Err(Error::InvalidState)
+        }
+    }
+
+    /// Get hardware capabilities
+    pub fn get_capabilities(&self) -> GStageCapabilities {
+        GStageCapabilities::detect()
     }
 
     /// Destroy a G-stage context
@@ -781,6 +1495,68 @@ pub fn get() -> Option<&'static GStageManager> {
 /// Get the global G-stage manager (panic if not initialized)
 pub fn get_expect() -> &'static GStageManager {
     get().expect("G-stage manager not initialized")
+}
+
+/// Get global hardware capabilities
+pub fn get_capabilities() -> GStageCapabilities {
+    GStageCapabilities::detect()
+}
+
+/// Check if a specific page table format is supported
+pub fn supports_mode(mode: GStageMode) -> bool {
+    get_capabilities().supports_mode(mode)
+}
+
+/// Get the best supported page table format
+pub fn get_best_mode() -> GStageMode {
+    get_capabilities().best_mode()
+}
+
+/// Create a G-stage context with automatic mode selection
+pub fn create_context_auto() -> Result<Vmid> {
+    if let Some(manager) = get() {
+        manager.create_context()
+    } else {
+        Err(Error::InvalidState)
+    }
+}
+
+/// Create a G-stage context with specific mode
+pub fn create_context_with_mode(mode: GStageMode) -> Result<Vmid> {
+    if let Some(manager) = get() {
+        manager.create_context_with_mode(mode)
+    } else {
+        Err(Error::InvalidState)
+    }
+}
+
+/// Translate GPA for active VM with optimized walk
+pub fn translate_active_optimized(gpa: Gpa) -> Result<Hpa> {
+    if let Some(manager) = get() {
+        if let Some(vmid) = manager.get_active_vmid() {
+            if let Some(context) = manager.get_context(vmid) {
+                context.translate_optimized(gpa)
+            } else {
+                Err(Error::NotFound)
+            }
+        } else {
+            Err(Error::InvalidState)
+        }
+    } else {
+        Err(Error::InvalidState)
+    }
+}
+
+/// Flush TLB for all VMs
+pub fn flush_all_tlbs() {
+    if let Some(manager) = get() {
+        // This would iterate through all VMs and flush their TLBs
+        // For now, just flush the current TLB
+        #[cfg(target_arch = "riscv64")]
+        unsafe {
+            core::arch::asm!("sfence.vma");
+        }
+    }
 }
 
 /// Helper functions for page flag conversion
