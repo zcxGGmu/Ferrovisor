@@ -14,6 +14,7 @@ pub mod allocator;
 
 // Re-export commonly used types
 pub use page::{AddressSpace, AddressSpaceType};
+pub use page::{CowPage, CowStats, CowManager, get_cow_manager, init_cow, handle_write_fault, optimize_memory_sharing};
 
 /// Physical address type
 pub type PhysAddr = u64;
@@ -122,6 +123,10 @@ pub struct PageFlags {
     pub dirty: bool,
     /// Global page (not flushed on TLB shootdown)
     pub global: bool,
+    /// Copy-on-write page
+    pub cow: bool,
+    /// Write-protected (for COW)
+    pub write_protected: bool,
 }
 
 impl Default for PageFlags {
@@ -136,6 +141,49 @@ impl Default for PageFlags {
             accessed: false,
             dirty: false,
             global: false,
+            cow: false,
+            write_protected: false,
+        }
+    }
+}
+
+impl PageFlags {
+    /// Create COW page flags (read-only, will trigger write fault)
+    pub fn cow() -> Self {
+        Self {
+            present: true,
+            writable: false,        // Write-protected to trigger fault
+            executable: true,
+            user: false,
+            write_through: false,
+            cache_disable: false,
+            accessed: false,
+            dirty: false,
+            global: false,
+            cow: true,
+            write_protected: true,
+        }
+    }
+
+    /// Check if page is COW-enabled
+    pub fn is_cow(&self) -> bool {
+        self.cow && self.write_protected
+    }
+
+    /// Create writable COW page (after copy)
+    pub fn cow_writable() -> Self {
+        Self {
+            present: true,
+            writable: true,         // Now writable after copy
+            executable: true,
+            user: false,
+            write_through: false,
+            cache_disable: false,
+            accessed: false,
+            dirty: false,
+            global: false,
+            cow: false,            // No longer COW
+            write_protected: false,
         }
     }
 }
@@ -160,6 +208,9 @@ pub fn init() -> Result<()> {
 
     // Initialize unified allocator
     allocator::init().map_err(|_| crate::Error::MemoryError)?;
+
+    // Initialize COW memory management
+    page::init_cow().map_err(|_| crate::Error::MemoryError)?;
 
     Ok(())
 }
