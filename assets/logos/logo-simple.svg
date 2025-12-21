@@ -1,0 +1,27 @@
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background gradient -->
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="200" height="200" rx="20" fill="url(#bgGradient)"/>
+
+  <!-- Central hexagon -->
+  <polygon points="100,50 150,75 150,125 100,150 50,125 50,75"
+           fill="#ffffff" opacity="0.9"/>
+
+  <!-- Simplified Ferrovisor text -->
+  <text x="100" y="105" text-anchor="middle" fill="#667eea"
+        font-family="Arial, sans-serif" font-size="18" font-weight="bold">
+    Ferrovisor
+  </text>
+
+  <!-- Three small dots representing architectures -->
+  <circle cx="70" cy="140" r="4" fill="#ffffff" opacity="0.8"/>
+  <circle cx="100" cy="140" r="4" fill="#ffffff" opacity="0.8"/>
+  <circle cx="130" cy="140" r="4" fill="#ffffff" opacity="0.8"/>
+</svg>

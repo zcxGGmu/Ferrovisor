@@ -65,7 +65,40 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 - 推荐**主要使用**这个版本
 ```
 
-### 6. **logo-favicon.svg** - 图标版本
+### 6. **logo-clean.svg** - 简洁版本 ⭐新推荐
+```
+特点：
+- 极简设计，只保留核心品牌名称
+- 清晰的"Ferrovisor"文字和简短副标题
+- 现代渐变背景，视觉效果简洁大方
+- 推荐**主要使用**这个版本
+```
+
+### 7. **logo-simple.svg** - 简单图形版本
+```
+特点：
+- 六边形背景 + 纯文字设计
+- 底部三个点暗示多架构支持
+- 适合需要图形元素的场景
+```
+
+### 8. **logo-minimal-new.svg** - 极简字母版本
+```
+特点：
+- 单字母"F"设计
+- 最小化的视觉元素
+- 适合小尺寸显示
+```
+
+### 9. **logo-zh-simple.svg** - 简洁中文版本
+```
+特点：
+- 中文README专用设计
+- 简洁的中英双语标题
+- 保留品牌识别度
+```
+
+### 10. **logo-favicon.svg** - 图标版本
 ```
 特点：
 - 32x32像素优化
@@ -79,8 +112,12 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 
 | 版本 | 使用场景 | 文件格式 |
 |------|----------|----------|
-| logo-universal | 主要品牌标识、网站头部 ⭐推荐 | SVG/PNG |
-| logo-multiarch | 架构文档、技术展示 | SVG/PNG |
+| logo-clean | 主要品牌标识、网站头部 ⭐推荐 | SVG/PNG |
+| logo-simple | 需要图形元素的场景 | SVG/PNG |
+| logo-minimal-new | 小尺寸显示、图标化 | SVG/PNG |
+| logo-zh-simple | 中文文档、README.zh-CN | SVG/PNG |
+| logo-universal | 技术展示、架构说明 | SVG/PNG |
+| logo-multiarch | 详细架构文档 | SVG/PNG |
 | logo-modern | 传统品牌标识、演示材料 | SVG/PNG |
 | logo-minimal | 技术文档、代码仓库 | SVG/PNG |
 | logo | 传统文档、打印材料 | SVG/PNG |
@@ -107,19 +144,29 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 ## 文件列表
 
 ```
-├── logo.svg          # 经典版本 (SVG)
-├── logo.png          # 经典版本 (PNG)
-├── logo-minimal.svg  # 简约版本 (SVG)
-├── logo-minimal.png  # 简约版本 (PNG)
-├── logo-modern.svg   # 现代版本 (SVG)
-├── logo-modern.png   # 现代版本 (PNG)
-├── logo-multiarch.svg # 多架构版本 (SVG) - 新增
-├── logo-multiarch.png # 多架构版本 (PNG) - 新增
-├── logo-universal.svg # 通用架构版本 (SVG) ⭐新推荐
-├── logo-universal.png # 通用架构版本 (PNG) ⭐新推荐
-├── logo-favicon.svg  # 图标版本 (SVG)
-├── favicon.png       # 图标版本 (PNG)
-└── LOGO.md          # 本文档
+├── logo.svg            # 经典版本 (SVG)
+├── logo.png            # 经典版本 (PNG)
+├── logo-minimal.svg    # 简约版本 (SVG)
+├── logo-minimal.png    # 简约版本 (PNG)
+├── logo-modern.svg     # 现代版本 (SVG)
+├── logo-modern.png     # 现代版本 (PNG)
+├── logo-clean.svg      # 简洁版本 (SVG) ⭐新推荐
+├── logo-clean.png      # 简洁版本 (PNG) ⭐新推荐
+├── logo-simple.svg     # 简单图形版本 (SVG) - 新增
+├── logo-simple.png     # 简单图形版本 (PNG) - 新增
+├── logo-minimal-new.svg # 极简字母版本 (SVG) - 新增
+├── logo-minimal-new.png # 极简字母版本 (PNG) - 新增
+├── logo-zh-simple.svg  # 简洁中文版本 (SVG) - 新增
+├── logo-zh-simple.png  # 简洁中文版本 (PNG) - 新增
+├── logo-multiarch.svg  # 多架构版本 (SVG)
+├── logo-multiarch.png  # 多架构版本 (PNG)
+├── logo-universal.svg  # 通用架构版本 (SVG)
+├── logo-universal.png  # 通用架构版本 (PNG)
+├── logo-zh.svg         # 中文版本 (SVG)
+├── logo-zh.png         # 中文版本 (PNG)
+├── logo-favicon.svg    # 图标版本 (SVG)
+├── favicon.png         # 图标版本 (PNG)
+└── LOGO.md             # 本文档
 ```
 
 ## 版权说明
