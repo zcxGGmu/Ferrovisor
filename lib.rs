@@ -1,3 +1,8 @@
+//! Ferrovisor - A Rust-based Type-1 Hypervisor
+//!
+//! This is the main library for the Ferrovisor hypervisor, providing
+//! virtualization capabilities for ARM64, RISC-V, and x86_64 architectures.
+
 #![no_std]
 #![no_main]
 #![feature(lang_items)]
@@ -6,11 +11,10 @@
 #![feature(allocator_api)]
 
 extern crate alloc;
-
-//! Ferrovisor - A Rust-based Type-1 Hypervisor
-//!
-//! This is the main library for the Ferrovisor hypervisor, providing
-//! virtualization capabilities for ARM64, RISC-V, and x86_64 architectures.
+use alloc::vec::Vec;
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::format;
 
 // Import allocator components
 use core::alloc::{GlobalAlloc, Layout};

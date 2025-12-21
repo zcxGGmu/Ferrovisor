@@ -49,7 +49,7 @@ struct BuddyBlock {
 }
 
 impl BuddyBlock {
-    const MAGIC: u32 = 0xBUD90C47; // "BUDDY" with some bits
+    const MAGIC: u32 = 0xB0090C47; // "BUDDY" with some bits
 
     /// Create a new buddy block
     fn new(order: u8, free: bool) -> Self {
