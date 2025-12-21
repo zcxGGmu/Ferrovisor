@@ -198,8 +198,8 @@ impl Vcpu {
         self.guest_csr = GuestCsrState::save();
 
         // Update statistics
-        self.stats.instructions_executed += read_csr!(crate::arch::riscv64::csr::MINSTRET);
-        self.stats.cycles_spent += read_csr!(crate::arch::riscv64::csr::MCYCLE);
+        self.stats.instructions_executed += read_csr!(crate::arch::riscv64::cpu::csr::MINSTRET);
+        self.stats.cycles_spent += read_csr!(crate::arch::riscv64::cpu::csr::MCYCLE);
 
         log::debug!("Saved state for VCPU {}", self.id);
         Ok(())

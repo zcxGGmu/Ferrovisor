@@ -11,6 +11,33 @@
 use crate::arch::riscv64::*;
 use bitflags::bitflags;
 
+/// Exception codes for RISC-V
+#[repr(usize)]
+pub enum ExceptionCode {
+    InstructionMisaligned = 0,
+    InstructionAccessFault = 1,
+    IllegalInstruction = 2,
+    Breakpoint = 3,
+    LoadMisaligned = 4,
+    LoadAccessFault = 5,
+    StoreMisaligned = 6,
+    StoreAccessFault = 7,
+    ECallFromUMode = 8,
+    ECallFromSMode = 9,
+    ECallFromMMode = 11,
+    InstructionPageFault = 12,
+    LoadPageFault = 13,
+    StorePageFault = 15,
+}
+
+/// Interrupt causes for RISC-V
+#[repr(usize)]
+pub enum InterruptCause {
+    SupervisorSoftware = 1,
+    SupervisorTimer = 5,
+    SupervisorExternal = 9,
+}
+
 /// CSR address definitions
 pub mod address {
     // User-level CSRs
@@ -45,6 +72,17 @@ pub mod address {
     pub const MCAUSE: usize = 0x342;
     pub const MTVAL: usize = 0x343;
     pub const MIP: usize = 0x344;
+
+    // Machine Information and Timer CSRs
+    pub const MVENDORID: usize = 0xF11;
+    pub const MARCHID: usize = 0xF12;
+    pub const MIMPID: usize = 0xF13;
+    pub const MHARTID: usize = 0xF14;
+
+    // Machine Counter/Timer CSRs
+    pub const MCYCLE: usize = 0xB00;
+    pub const MINSTRET: usize = 0xB02;
+    pub const TIME: usize = 0xC01;
     pub const MTINST: usize = 0x34a;
     pub const MTVAL2: usize = 0x34b;
 
@@ -186,35 +224,40 @@ impl UsizeCsr {
 /// CSR access for u64
 pub struct U64Csr(pub usize);
 
-impl CsrAccess<u64> for U64Csr {
+impl U64Csr {
+    /// Read CSR value as u64
     #[inline]
-    fn read() -> u64 {
+    pub fn read(&self) -> u64 {
         let value: u64;
-        unsafe { core::arch::asm!("csrr {}, {}", out(reg) value, in(reg) Self::0) };
+        unsafe { core::arch::asm!("csrr {}, {}", out(reg) value, in(reg) self.0) };
         value
     }
 
+    /// Write value to CSR
     #[inline]
-    fn write(value: u64) {
-        unsafe { core::arch::asm!("csrw {}, {}", in(reg) Self::0, in(reg) value) };
+    pub fn write(&self, value: u64) {
+        unsafe { core::arch::asm!("csrw {}, {}", in(reg) self.0, in(reg) value) };
     }
 
+    /// Set bits in CSR
     #[inline]
-    fn set(bits: u64) {
-        unsafe { core::arch::asm!("csrs {}, {}", in(reg) Self::0, in(reg) bits) };
+    pub fn set(&self, bits: u64) {
+        unsafe { core::arch::asm!("csrs {}, {}", in(reg) self.0, in(reg) bits) };
     }
 
+    /// Clear bits in CSR
     #[inline]
-    fn clear(bits: u64) {
-        unsafe { core::arch::asm!("csrc {}, {}", in(reg) Self::0, in(reg) bits) };
+    pub fn clear(&self, bits: u64) {
+        unsafe { core::arch::asm!("csrc {}, {}", in(reg) self.0, in(reg) bits) };
     }
 
+    /// Modify CSR (clear then set)
     #[inline]
-    fn modify(clear: u64, set: u64) -> u64 {
+    pub fn modify(&self, clear: u64, set: u64) -> u64 {
         let value: u64;
         unsafe {
-            core::arch::asm!("csrrc {}, {}, {}", out(reg) value, in(reg) Self::0, in(reg) clear);
-            core::arch::asm!("csrs {}, {}", in(reg) Self::0, in(reg) set);
+            core::arch::asm!("csrrc {}, {}, {}", out(reg) value, in(reg) self.0, in(reg) clear);
+            core::arch::asm!("csrs {}, {}", in(reg) self.0, in(reg) set);
         }
         value
     }
@@ -223,7 +266,7 @@ impl CsrAccess<u64> for U64Csr {
 /// MSTATUS register flags
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Mstatus: usize {
+    pub struct MstatusFlags: usize {
         const SIE = 1 << 1;      // Supervisor Interrupt Enable
         const MIE = 1 << 3;      // Machine Interrupt Enable
         const SPIE = 1 << 5;     // Supervisor Previous Interrupt Enable
@@ -247,32 +290,32 @@ impl MSTATUS {
     pub const CSR: usize = address::MSTATUS;
 
     #[inline]
-    pub fn read() -> Mstatus {
+    pub fn read() -> MstatusFlags {
         let csr = UsizeCsr(Self::CSR);
         let value = csr.read();
-        Mstatus::from_bits_truncate(value)
+        MstatusFlags::from_bits_truncate(value)
     }
 
     #[inline]
-    pub fn write(value: Mstatus) {
+    pub fn write(value: MstatusFlags) {
         let csr = UsizeCsr(Self::CSR);
         csr.write(value.bits());
     }
 
     #[inline]
-    pub fn set(bits: Mstatus) {
+    pub fn set(bits: MstatusFlags) {
         let csr = UsizeCsr(Self::CSR);
         csr.set(bits.bits());
     }
 
     #[inline]
-    pub fn clear(bits: Mstatus) {
+    pub fn clear(bits: MstatusFlags) {
         let csr = UsizeCsr(Self::CSR);
         csr.clear(bits.bits());
     }
 
     #[inline]
-    pub fn modify(clear: Mstatus, set: Mstatus) {
+    pub fn modify(clear: MstatusFlags, set: MstatusFlags) {
         let csr = UsizeCsr(Self::CSR);
         csr.modify(clear.bits(), set.bits());
     }
@@ -281,7 +324,7 @@ impl MSTATUS {
 /// SSTATUS register flags
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Sstatus: usize {
+    pub struct SstatusFlags: usize {
         const SIE = 1 << 1;      // Supervisor Interrupt Enable
         const MIE = 1 << 3;      // Machine Interrupt Enable
         const SPIE = 1 << 5;     // Supervisor Previous Interrupt Enable
@@ -301,29 +344,34 @@ impl SSTATUS {
     pub const CSR: usize = address::SSTATUS;
 
     #[inline]
-    pub fn read() -> Sstatus {
-        let value = UsizeCsr(Self::CSR).read();
-        Sstatus::from_bits_truncate(value)
+    pub fn read() -> SstatusFlags {
+        let csr = UsizeCsr(Self::CSR);
+        let value = csr.read();
+        SstatusFlags::from_bits_truncate(value)
     }
 
     #[inline]
-    pub fn write(value: Sstatus) {
-        UsizeCsr(Self::CSR).write(value.bits());
+    pub fn write(value: SstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.write(value.bits());
     }
 
     #[inline]
-    pub fn set(bits: Sstatus) {
-        UsizeCsr(Self::CSR).set(bits.bits());
+    pub fn set(bits: SstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.set(bits.bits());
     }
 
     #[inline]
-    pub fn clear(bits: Sstatus) {
-        UsizeCsr(Self::CSR).clear(bits.bits());
+    pub fn clear(bits: SstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.clear(bits.bits());
     }
 
     #[inline]
-    pub fn modify(clear: Sstatus, set: Sstatus) {
-        UsizeCsr(Self::CSR).modify(clear.bits(), set.bits());
+    pub fn modify(clear: SstatusFlags, set: SstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.modify(clear.bits(), set.bits());
     }
 }
 
@@ -561,122 +609,89 @@ impl HSTATUS {
     pub const CSR: usize = address::HSTATUS;
 
     #[inline]
-    pub fn read() -> Hstatus {
+    pub fn read() -> HstatusFlags {
         let value = UsizeCsr(Self::CSR).read();
-        Hstatus::from_bits_truncate(value)
+        HstatusFlags::from_bits_truncate(value)
     }
 
     #[inline]
-    pub fn write(value: Hstatus) {
+    pub fn write(value: HstatusFlags) {
         UsizeCsr(Self::CSR).write(value.bits());
     }
 
     #[inline]
-    pub fn set(bits: Hstatus) {
+    pub fn set(bits: HstatusFlags) {
         UsizeCsr(Self::CSR).set(bits.bits());
     }
 
     #[inline]
-    pub fn clear(bits: Hstatus) {
+    pub fn clear(bits: HstatusFlags) {
         UsizeCsr(Self::CSR).clear(bits.bits());
     }
 
     #[inline]
-    pub fn modify(clear: Hstatus, set: Hstatus) {
+    pub fn modify(clear: HstatusFlags, set: HstatusFlags) {
         UsizeCsr(Self::CSR).modify(clear.bits(), set.bits());
     }
 }
 
-/// CSR operations for virtualization
-pub mod virtualization {
-    use super::*;
+/// MEDELEG (Machine Exception Delegation) register
+pub struct MEDELEG;
+impl MEDELEG {
+    pub const CSR: usize = address::MEDELEG;
 
-    /// HEDELEG (Hypervisor Exception Delegation) register
-    pub struct HEDELEG;
-    impl HEDELEG {
-        pub const CSR: usize = address::HEDELEG;
-
-        #[inline]
-        pub fn read() -> usize {
-            UsizeCsr(Self::CSR).read()
-        }
-
-        #[inline]
-        pub fn write(value: usize) {
-            UsizeCsr(Self::CSR).write(value);
-        }
-
-        #[inline]
-        pub fn set(bits: usize) {
-            UsizeCsr(Self::CSR).set(bits);
-        }
-
-        #[inline]
-        pub fn clear(bits: usize) {
-            UsizeCsr(Self::CSR).clear(bits);
-        }
+    #[inline]
+    pub fn read() -> usize {
+        let csr = UsizeCsr(Self::CSR);
+        csr.read()
     }
 
-    /// HIDELEG (Hypervisor Interrupt Delegation) register
-    pub struct HIDELEG;
-    impl HIDELEG {
-        pub const CSR: usize = address::HIDELEG;
-
-        #[inline]
-        pub fn read() -> usize {
-            UsizeCsr(Self::CSR).read()
-        }
-
-        #[inline]
-        pub fn write(value: usize) {
-            UsizeCsr(Self::CSR).write(value);
-        }
-
-        #[inline]
-        pub fn set(bits: usize) {
-            UsizeCsr(Self::CSR).set(bits);
-        }
-
-        #[inline]
-        pub fn clear(bits: usize) {
-            UsizeCsr(Self::CSR).clear(bits);
-        }
+    #[inline]
+    pub fn write(value: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.write(value);
     }
 
-    /// HGATP (Hypervisor Guest Address Translation and Protection) register
-    pub struct HGATP;
-    impl HGATP {
-        pub const CSR: usize = 0x680;
+    #[inline]
+    pub fn set(bits: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.set(bits);
+    }
 
-        #[inline]
-        pub fn read() -> usize {
-            UsizeCsr(Self::CSR).read()
-        }
+    #[inline]
+    pub fn clear(bits: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.clear(bits);
+    }
+}
 
-        #[inline]
-        pub fn write(value: usize) {
-            UsizeCsr(Self::CSR).write(value);
-        }
+/// MIDELEG (Machine Interrupt Delegation) register
+pub struct MIDELEG;
+impl MIDELEG {
+    pub const CSR: usize = address::MIDELEG;
 
-        #[inline]
-        pub fn make(ppn: usize, vmid: usize, mode: usize) -> usize {
-            (ppn << 44) | ((vmid & 0xFFFF) << 12) | (mode & 0xF)
-        }
+    #[inline]
+    pub fn read() -> usize {
+        let csr = UsizeCsr(Self::CSR);
+        csr.read()
+    }
 
-        #[inline]
-        pub fn extract_ppn(value: usize) -> usize {
-            value >> 44
-        }
+    #[inline]
+    pub fn write(value: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.write(value);
+    }
 
-        #[inline]
-        pub fn extract_vmid(value: usize) -> usize {
-            (value >> 12) & 0xFFFF
-        }
+    #[inline]
+    pub fn set(bits: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.set(bits);
+    }
 
-        #[inline]
-        pub fn extract_mode(value: usize) -> usize {
-            value & 0xF
-        }
+    #[inline]
+    pub fn clear(bits: usize) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.clear(bits);
     }
 }
 
@@ -685,7 +700,7 @@ pub fn init() -> Result<(), &'static str> {
     log::debug!("Initializing CSR access");
 
     // Set up initial machine mode configuration
-    MSTATUS::write(Mstatus::MIE);
+    MSTATUS::write(MstatusFlags::MIE);
 
     // Configure interrupt delegation (delegate supervisor interrupts to S-mode)
     MEDELEG::write(
@@ -719,7 +734,7 @@ pub fn init() -> Result<(), &'static str> {
 /// HSTATUS register flags
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Hstatus: usize {
+    pub struct HstatusFlags: usize {
         const VTSR = 1 << 22;    // Virtual SSTATUS Read
         const VTW = 1 << 21;     // Virtual Timer Write
         const VTVM = 1 << 20;    // Virtual Trap Virtual Memory
@@ -993,7 +1008,7 @@ impl HGEIP {
 /// VSSTATUS register flags (same as SSTATUS but for virtual supervisor)
 bitflags! {
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub struct Vsstatus: usize {
+    pub struct VsstatusFlags: usize {
         const SIE = 1 << 1;      // Supervisor Interrupt Enable
         const MIE = 1 << 3;      // Machine Interrupt Enable
         const SPIE = 1 << 5;     // Supervisor Previous Interrupt Enable
@@ -1009,24 +1024,28 @@ impl VSSTATUS {
     pub const CSR: usize = address::VSSTATUS;
 
     #[inline]
-    pub fn read() -> Vsstatus {
-        let value = UsizeCsr(Self::CSR).read();
-        Vsstatus::from_bits_truncate(value)
+    pub fn read() -> VsstatusFlags {
+        let csr = UsizeCsr(Self::CSR);
+        let value = csr.read();
+        VsstatusFlags::from_bits_truncate(value)
     }
 
     #[inline]
-    pub fn write(value: Vsstatus) {
-        UsizeCsr(Self::CSR).write(value.bits());
+    pub fn write(value: VsstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.write(value.bits());
     }
 
     #[inline]
-    pub fn set(bits: Vsstatus) {
-        UsizeCsr(Self::CSR).set(bits.bits());
+    pub fn set(bits: VsstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.set(bits.bits());
     }
 
     #[inline]
-    pub fn clear(bits: Vsstatus) {
-        UsizeCsr(Self::CSR).clear(bits.bits());
+    pub fn clear(bits: VsstatusFlags) {
+        let csr = UsizeCsr(Self::CSR);
+        csr.clear(bits.bits());
     }
 }
 
@@ -1411,21 +1430,21 @@ mod tests {
     #[test]
     fn test_h_extension_csrs() {
         // Test HSTATUS operations
-        let hstatus = Hstatus::VTVM | Hstatus::SPV;
+        let hstatus = HstatusFlags::VTVM | HstatusFlags::SPV;
         HSTATUS::write(hstatus);
         let read_hstatus = HSTATUS::read();
-        assert!(read_hstatus.contains(Hstatus::VTVM));
-        assert!(read_hstatus.contains(Hstatus::SPV));
+        assert!(read_hstatus.contains(HstatusFlags::VTVM));
+        assert!(read_hstatus.contains(HstatusFlags::SPV));
     }
 
     #[test]
     fn test_virtual_supervisor_csrs() {
         // Test VSSTATUS operations
-        let vsstatus = Vsstatus::SIE | Vsstatus::SUM;
+        let vsstatus = VsstatusFlags::SIE | VsstatusFlags::SUM;
         VSSTATUS::write(vsstatus);
         let read_vsstatus = VSSTATUS::read();
-        assert!(read_vsstatus.contains(Vsstatus::SIE));
-        assert!(read_vsstatus.contains(Vsstatus::SUM));
+        assert!(read_vsstatus.contains(VsstatusFlags::SIE));
+        assert!(read_vsstatus.contains(VsstatusFlags::SUM));
 
         // Test VSTVEC operations
         let base = 0x80000000;

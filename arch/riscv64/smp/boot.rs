@@ -259,7 +259,7 @@ pub fn start_secondary_cpu(cpu_id: usize) -> Result<(), &'static str> {
 
 /// Wait for secondary CPU to be ready
 pub fn wait_for_cpu_ready(cpu_id: usize, timeout_ms: u64) -> Result<(), &'static str> {
-    let start_time = read_csr!(crate::arch::riscv64::csr::TIME);
+    let start_time = read_csr!(crate::arch::riscv64::cpu::csr::TIME);
 
     loop {
         if let Some(boot_info) = get_cpu_boot_info(cpu_id) {
@@ -278,7 +278,7 @@ pub fn wait_for_cpu_ready(cpu_id: usize, timeout_ms: u64) -> Result<(), &'static
         }
 
         // Check timeout
-        let current_time = read_csr!(crate::arch::riscv64::csr::TIME);
+        let current_time = read_csr!(crate::arch::riscv64::cpu::csr::TIME);
         let elapsed = current_time.wrapping_sub(start_time);
 
         // Simple timeout check (assuming 10MHz timer)

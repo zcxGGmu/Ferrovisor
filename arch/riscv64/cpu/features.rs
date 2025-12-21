@@ -180,12 +180,12 @@ pub fn detect() -> Result<(), &'static str> {
     let mut info = CpuInfo::default();
 
     // Read hardware thread ID
-    info.hart_id = read_csr!(crate::arch::riscv64::csr::MHARTID);
+    info.hart_id = read_csr!(crate::arch::riscv64::cpu::csr::MHARTID);
 
     // Read vendor and architecture IDs
-    info.vendor_id = read_csr!(crate::arch::riscv64::csr::MVENDORID);
-    info.arch_id = read_csr!(crate::arch::riscv64::csr::MARCHID);
-    info.impl_id = read_csr!(crate::arch::riscv64::csr::MIMPID);
+    info.vendor_id = read_csr!(crate::arch::riscv64::cpu::csr::MVENDORID);
+    info.arch_id = read_csr!(crate::arch::riscv64::cpu::csr::MARCHID);
+    info.impl_id = read_csr!(crate::arch::riscv64::cpu::csr::MIMPID);
 
     // Read ISA string from device tree or construct it
     info.isa_string = detect_isa_string();
@@ -265,7 +265,7 @@ fn detect_isa_string() -> String {
 
 fn detect_xlen() -> usize {
     // Read MXL field from MISA
-    let misa = read_csr!(crate::arch::riscv64::csr::MISA);
+    let misa = read_csr!(crate::arch::riscv64::cpu::csr::MISA);
     match misa & 0xC0000000 {
         0x40000000 => 32,
         0x80000000 => 64,
@@ -275,7 +275,7 @@ fn detect_xlen() -> usize {
 }
 
 fn detect_extensions(info: &mut CpuInfo) {
-    let misa = read_csr!(crate::arch::riscv64::csr::MISA);
+    let misa = read_csr!(crate::arch::riscv64::cpu::csr::MISA);
 
     // Check standard extensions
     if misa & (1 << ('m' as u8 - 'a' as u8)) != 0 {
