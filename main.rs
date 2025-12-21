@@ -6,7 +6,9 @@
 #![no_std]
 #![no_main]
 
-use ferrovisor::{init, run, Error};
+// We need to import from the ferrovisor library
+// This will be resolved when we build as a binary with the lib
+pub use ferrovisor::{init, run, Error};
 
 /// Early entry point for ARM64
 #[cfg(target_arch = "aarch64")]
@@ -117,6 +119,11 @@ fn early_panic(msg: &str) -> ! {
         riscv::asm::wfi();
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::hlt();
+        {
+            // Simple halt for x86_64
+            unsafe {
+                core::arch::asm!("hlt");
+            }
+        }
     }
 }

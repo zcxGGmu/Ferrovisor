@@ -4,7 +4,7 @@
 //! including interrupt controllers, interrupt routing, and exception handling.
 
 use crate::{Result, Error};
-use crate::core::arch::common;
+use crate::arch::common;
 use crate::core::mm::VirtAddr;
 use crate::core::sync::SpinLock;
 use crate::utils::bitmap::Bitmap;

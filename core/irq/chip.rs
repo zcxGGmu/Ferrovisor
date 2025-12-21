@@ -7,7 +7,7 @@ use crate::{Result, Error};
 use crate::core::irq::{InterruptController, IrqNumber, IrqPriority};
 use crate::core::mm::VirtAddr;
 use crate::arch::common::MmioAccess;
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 
 /// GIC (Generic Interrupt Controller) - ARM
 pub struct Gic {

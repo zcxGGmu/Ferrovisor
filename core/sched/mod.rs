@@ -9,6 +9,9 @@ pub mod scheduler;
 pub mod rr;
 pub mod fifo;
 
+// Re-export from scheduler
+pub use scheduler::ThreadControlBlock;
+
 /// Thread ID type
 pub type ThreadId = u64;
 

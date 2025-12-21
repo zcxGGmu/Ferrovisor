@@ -9,7 +9,7 @@
 //! chooses the best allocator based on size and usage patterns.
 
 use crate::core::mm::{PAGE_SIZE, buddy, slab, frame};
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::ptr::NonNull;
 
 /// Allocation strategy

@@ -11,10 +11,12 @@
 #![feature(allocator_api)]
 
 extern crate alloc;
-use alloc::vec::Vec;
-use alloc::boxed::Box;
-use alloc::string::String;
-use alloc::format;
+
+// Re-export alloc types globally
+pub use alloc::vec::Vec;
+pub use alloc::boxed::Box;
+pub use alloc::string::String;
+pub use alloc::format;
 
 // Import allocator components
 use core::alloc::{GlobalAlloc, Layout};
@@ -213,7 +215,9 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         riscv::asm::wfi();
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::hlt();
+        {
+            unsafe { core::arch::asm!("hlt"); }
+        }
     }
 }
 

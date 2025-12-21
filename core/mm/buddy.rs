@@ -11,7 +11,7 @@
 //! - Integration with frame allocator for backing memory
 
 use crate::core::mm::{PAGE_SIZE, align_up, frame::alloc_frame, frame::dealloc_frame};
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
 

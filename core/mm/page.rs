@@ -7,7 +7,7 @@ use crate::core::mm::{
     PageFlags, AddressSpaceType, align_up, align_down,
 };
 use crate::core::mm::frame::{alloc_frame, dealloc_frame};
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::ptr::NonNull;
 
 /// Page table entry size (in bytes)

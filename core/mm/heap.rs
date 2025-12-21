@@ -3,7 +3,7 @@
 //! Provides heap allocation for dynamic memory management in the hypervisor.
 
 use crate::core::mm::{VirtAddr, align_up, PAGE_SIZE};
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 

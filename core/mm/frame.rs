@@ -4,7 +4,7 @@
 
 use crate::core::mm::{FrameNr, PhysAddr, PAGE_SIZE, align_up, align_down};
 use crate::utils::bitmap::Bitmap;
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::ptr::NonNull;
 
 /// Physical frame allocator

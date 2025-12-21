@@ -7,7 +7,7 @@ use crate::{Result, Error};
 use crate::emulator::{Emulator, Error as EmulatorError};
 use crate::core::mm::{VirtAddr, PhysAddr};
 use crate::arch::common::MmioAccess;
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// PL031 RTC registers

@@ -12,6 +12,9 @@ pub mod slab;
 pub mod buddy;
 pub mod allocator;
 
+// Re-export commonly used types
+pub use page::{AddressSpace, AddressSpaceType};
+
 /// Physical address type
 pub type PhysAddr = u64;
 

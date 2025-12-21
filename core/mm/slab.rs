@@ -11,7 +11,7 @@
 //! - Thread-safe allocation/deallocation
 
 use crate::core::mm::{PAGE_SIZE, align_up, frame::alloc_frame, frame::dealloc_frame};
-use crate::utils::spinlock::SpinLock;
+use crate::core::sync::SpinLock;
 use core::alloc::{GlobalAlloc, Layout};
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
