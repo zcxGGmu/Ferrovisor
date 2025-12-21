@@ -395,13 +395,22 @@ impl VirtualCpu {
         // Load guest context and enter guest
         let exit_info = unsafe {
             #[cfg(target_arch = "aarch64")]
-            self.run_arm64()?
+            {
+                self.run_arm64()?
+            }
 
             #[cfg(target_arch = "riscv64")]
-            self.run_riscv64()?
+            {
+                self.run_riscv64()?
+            }
 
             #[cfg(target_arch = "x86_64")]
-            self.run_x86_64()?
+            {
+                self.run_x86_64()?
+            }
+
+            #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "x86_64")))]
+            compile_error!("Unsupported architecture")
         };
 
         // Restore host context

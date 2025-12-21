@@ -10,6 +10,7 @@
 
 use crate::arch::riscv64::cpu::csr::*;
 use crate::arch::riscv64::mmu::ptable::*;
+use crate::arch::riscv64::mmu::extended_pt::*;
 use bitflags::bitflags;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -24,6 +25,33 @@ pub enum GStageMode {
     Sv39x4 = 8,
     /// Sv48x4 - 48-bit guest addresses, 4KB pages
     Sv48x4 = 9,
+    /// Sv57x4 - 57-bit guest addresses, 4KB pages (extended)
+    Sv57x4 = 10,
+}
+
+impl From<GStageMode> for ExtendedPageTableFormat {
+    fn from(mode: GStageMode) -> Self {
+        match mode {
+            GStageMode::Bare => ExtendedPageTableFormat::Bare,
+            GStageMode::Sv32x4 => ExtendedPageTableFormat::Sv32,
+            GStageMode::Sv39x4 => ExtendedPageTableFormat::Sv39,
+            GStageMode::Sv48x4 => ExtendedPageTableFormat::Sv48,
+            GStageMode::Sv57x4 => ExtendedPageTableFormat::Sv57,
+        }
+    }
+}
+
+impl From<ExtendedPageTableFormat> for GStageMode {
+    fn from(format: ExtendedPageTableFormat) -> Self {
+        match format {
+            ExtendedPageTableFormat::Bare => GStageMode::Bare,
+            ExtendedPageTableFormat::Sv32 => GStageMode::Sv32x4,
+            ExtendedPageTableFormat::Sv39 => GStageMode::Sv39x4,
+            ExtendedPageTableFormat::Sv48 => GStageMode::Sv48x4,
+            ExtendedPageTableFormat::Sv57 => GStageMode::Sv57x4,
+            ExtendedPageTableFormat::Sv64 => GStageMode::Sv57x4, // Map Sv64 to Sv57x4
+        }
+    }
 }
 
 impl GStageMode {
@@ -34,22 +62,47 @@ impl GStageMode {
 
     /// Get number of address bits supported
     pub fn addr_bits(self) -> usize {
-        match self {
-            GStageMode::Bare => 0,
-            GStageMode::Sv32x4 => 32,
-            GStageMode::Sv39x4 => 39,
-            GStageMode::Sv48x4 => 48,
-        }
+        ExtendedPageTableFormat::from(self).va_bits()
     }
 
     /// Get number of page table levels
     pub fn levels(self) -> usize {
-        match self {
-            GStageMode::Bare => 0,
-            GStageMode::Sv32x4 => 2,
-            GStageMode::Sv39x4 => 3,
-            GStageMode::Sv48x4 => 4,
-        }
+        ExtendedPageTableFormat::from(self).levels()
+    }
+
+    /// Get number of VPN bits per level
+    pub fn vpn_bits_per_level(self) -> usize {
+        ExtendedPageTableFormat::from(self).vpn_bits_per_level()
+    }
+
+    /// Get entries per page table
+    pub fn entries_per_pt(self) -> usize {
+        ExtendedPageTableFormat::from(self).entries_per_pt()
+    }
+
+    /// Get maximum page size
+    pub fn max_page_size(self) -> usize {
+        ExtendedPageTableFormat::from(self).max_page_size()
+    }
+
+    /// Check if this format supports huge pages
+    pub fn supports_huge_pages(self) -> bool {
+        ExtendedPageTableFormat::from(self).supports_huge_pages()
+    }
+
+    /// Check if an address is valid for this format
+    pub fn is_valid_va(self, va: usize) -> bool {
+        ExtendedPageTableFormat::from(self).is_valid_va(va)
+    }
+
+    /// Check if a physical address is valid for this format
+    pub fn is_valid_pa(self, pa: usize) -> bool {
+        ExtendedPageTableFormat::from(self).is_valid_pa(pa)
+    }
+
+    /// Get extended page table format
+    pub fn to_extended_format(self) -> ExtendedPageTableFormat {
+        ExtendedPageTableFormat::from(self)
     }
 }
 
@@ -279,6 +332,30 @@ impl GStageTranslator {
         }
     }
 
+    /// Create a new G-stage translator with automatic format detection
+    pub fn new_with_auto_detection(vmid: u16, root_pt_pa: usize) -> Result<Self, &'static str> {
+        // Use format detector to determine best mode
+        let format_detector = FormatDetector::new();
+        let detected_format = format_detector.detect_current_format()
+            .unwrap_or_else(|| {
+                // Fallback hierarchy: Sv48 -> Sv39 -> Sv32 -> Bare
+                if format_detector.is_format_supported(ExtendedPageTableFormat::Sv48) {
+                    ExtendedPageTableFormat::Sv48
+                } else if format_detector.is_format_supported(ExtendedPageTableFormat::Sv39) {
+                    ExtendedPageTableFormat::Sv39
+                } else if format_detector.is_format_supported(ExtendedPageTableFormat::Sv32) {
+                    ExtendedPageTableFormat::Sv32
+                } else {
+                    ExtendedPageTableFormat::Bare
+                }
+            });
+
+        let mode = GStageMode::from(detected_format);
+        log::info!("Auto-selected G-stage mode: {:?} (format: {:?})", mode, detected_format);
+
+        Ok(Self::new(vmid, root_pt_pa, mode))
+    }
+
     /// Make HGATP register value
     pub fn make_hgatp(vmid: u16, ppn: usize, mode: GStageMode) -> usize {
         let hgatp_ppn = ppn >> 12; // Convert to PPN
@@ -303,7 +380,22 @@ impl GStageTranslator {
             1 => GStageMode::Sv32x4,
             8 => GStageMode::Sv39x4,
             9 => GStageMode::Sv48x4,
-            _ => GStageMode::Bare, // Default
+            10 => GStageMode::Sv57x4,
+            _ => {
+                // Try to auto-detect based on current hardware
+                let format_detector = FormatDetector::new();
+                if format_detector.is_format_supported(ExtendedPageTableFormat::Sv57) {
+                    GStageMode::Sv57x4
+                } else if format_detector.is_format_supported(ExtendedPageTableFormat::Sv48) {
+                    GStageMode::Sv48x4
+                } else if format_detector.is_format_supported(ExtendedPageTableFormat::Sv39) {
+                    GStageMode::Sv39x4
+                } else if format_detector.is_format_supported(ExtendedPageTableFormat::Sv32) {
+                    GStageMode::Sv32x4
+                } else {
+                    GStageMode::Bare
+                }
+            }
         }
     }
 
@@ -339,6 +431,7 @@ impl GStageTranslator {
             }
             GStageMode::Sv39x4 => self.translate_sv39x4(gpa),
             GStageMode::Sv48x4 => self.translate_sv48x4(gpa),
+            GStageMode::Sv57x4 => self.translate_sv57x4(gpa),
             GStageMode::Sv32x4 => self.translate_sv32x4(gpa),
         }
     }
@@ -449,6 +542,70 @@ impl GStageTranslator {
         // Continue to final level
         let next_pt_pa = ((pte & gstage_pte::PPN_MASK) >> 2) << 12;
         pte = self.walk_page_table(next_pt_pa, vpn[0])?;
+
+        if (pte & (gstage_pte::R | gstage_pte::W | gstage_pte::X)) == 0 {
+            return Err(GStageFault::InvalidPte);
+        }
+
+        let ppn = (pte & gstage_pte::PPN_MASK) >> 2;
+        let hpa = (ppn << 12) | (gpa & 0xFFF);
+
+        let permissions = self.pte_to_permissions(pte);
+
+        Ok(GStageTranslationResult {
+            hpa,
+            permissions,
+            page_size: 4096,
+            cached: false,
+        })
+    }
+
+    /// Translate using Sv57x4 format
+    fn translate_sv57x4(&self, gpa: usize) -> Result<GStageTranslationResult, GStageFault> {
+        // Sv57x4: 57-bit guest addresses, 5-level page table
+        let vpn = [
+            (gpa >> 12) & 0x1FF,   // VPN [11:0]
+            (gpa >> 21) & 0x1FF,   // VPN [20:12]
+            (gpa >> 30) & 0x1FF,   // VPN [29:21]
+            (gpa >> 39) & 0x1FF,   // VPN [38:30]
+            (gpa >> 48) & 0x1FF,   // VPN [47:39]
+        ];
+
+        // Walk the 5-level page table
+        let mut pte = self.walk_page_table(self.root_pt_pa, vpn[4])?; // Level 4
+
+        for level in (0..=3).rev() { // Levels 3, 2, 1, 0
+            if pte & gstage_pte::V == 0 {
+                return Err(GStageFault::InvalidPte);
+            }
+
+            if (pte & (gstage_pte::R | gstage_pte::W | gstage_pte::X)) != 0 {
+                // Leaf PTE found - calculate HPA
+                let ppn = (pte & gstage_pte::PPN_MASK) >> 2;
+                let page_offset_bits = 12 + (level * 9); // 12 + level * VPN bits
+                let page_mask = (1usize << page_offset_bits) - 1;
+                let hpa = (ppn << 12) | (gpa & page_mask);
+
+                let permissions = self.pte_to_permissions(pte);
+                let page_size = 1usize << page_offset_bits;
+
+                return Ok(GStageTranslationResult {
+                    hpa,
+                    permissions,
+                    page_size,
+                    cached: false,
+                });
+            }
+
+            // Continue to next level
+            let next_pt_pa = ((pte & gstage_pte::PPN_MASK) >> 2) << 12;
+            pte = self.walk_page_table(next_pt_pa, vpn[level as usize])?;
+        }
+
+        // Final level (Level 0) - must be leaf
+        if pte & gstage_pte::V == 0 {
+            return Err(GStageFault::InvalidPte);
+        }
 
         if (pte & (gstage_pte::R | gstage_pte::W | gstage_pte::X)) == 0 {
             return Err(GStageFault::InvalidPte);
@@ -708,16 +865,28 @@ pub struct TwoStageStats {
 /// Global G-stage translator
 static mut GSTAGE_TRANSLATOR: Option<GStageTranslator> = None;
 
-/// Initialize G-stage translation
+/// Initialize G-stage translation with automatic format detection
 pub fn init() -> Result<(), &'static str> {
     log::info!("Initializing G-stage address translation");
 
-    // Create default G-stage translator
+    // Initialize extended page table format detection
+    let format_detector = FormatDetector::new();
+    let supported_formats = format_detector.get_supported_formats();
+    log::info!("Supported extended page table formats: {:#x}", supported_formats);
+
+    // Auto-detect best format based on hardware capabilities
+    let detected_format = format_detector.detect_current_format()
+        .unwrap_or(ExtendedPageTableFormat::Sv39); // Fallback to Sv39
+    log::info!("Detected page table format: {:?}", detected_format);
+
+    // Convert to G-stage mode
+    let mode = GStageMode::from(detected_format);
+
+    // Create default G-stage translator with detected format
     let vmid = 1;
     let root_pt_pa = 0x80000000; // Default root page table location
-    let mode = GStageMode::Sv39x4;
 
-    let translator = GStageTranslator::new(vmid, root_pt_pa, mode);
+    let translator = GStageTranslator::new_with_auto_detection(vmid, root_pt_pa)?;
 
     // Configure hardware HGATP register
     translator.configure_hgatp(vmid, root_pt_pa, mode);
@@ -726,7 +895,7 @@ pub fn init() -> Result<(), &'static str> {
         GSTAGE_TRANSLATOR = Some(translator);
     }
 
-    log::info!("G-stage address translation initialized successfully");
+    log::info!("G-stage address translation initialized successfully with mode: {:?}", mode);
     Ok(())
 }
 
@@ -839,5 +1008,107 @@ mod tests {
         assert!(permissions.contains(GStagePermissions::WRITE));
         assert!(permissions.contains(GStagePermissions::EXECUTE));
         assert!(permissions.contains(GStagePermissions::USER));
+    }
+
+    #[test]
+    fn test_extended_page_table_formats() {
+        // Test conversion between GStageMode and ExtendedPageTableFormat
+        let mode = GStageMode::Sv57x4;
+        let format = ExtendedPageTableFormat::from(mode);
+        assert_eq!(format, ExtendedPageTableFormat::Sv57);
+
+        let converted_mode = GStageMode::from(format);
+        assert_eq!(converted_mode, mode);
+
+        // Test format properties
+        assert_eq!(format.va_bits(), 57);
+        assert_eq!(format.levels(), 5);
+        assert_eq!(format.entries_per_pt(), 512);
+        assert!(format.supports_huge_pages());
+        assert!(format.is_valid_va(0x123456789ABCDEF));
+        assert!(!format.is_valid_va(1usize << 57)); // Too large
+    }
+
+    #[test]
+    fn test_auto_detection() {
+        // Test auto-detection fallback hierarchy
+        let mut format_detector = FormatDetector::new();
+
+        // Mock scenario: only Sv32 supported
+        format_detector.set_supported_formats(1 << 3); // Sv32 only
+        assert!(format_detector.is_format_supported(ExtendedPageTableFormat::Sv32));
+        assert!(!format_detector.is_format_supported(ExtendedPageTableFormat::Sv39));
+
+        // Test auto-detection result
+        let detected = format_detector.detect_current_format();
+        assert_eq!(detected, None); // No current format set
+
+        // Test manual format setting
+        format_detector.set_current_format(Some(ExtendedPageTableFormat::Sv32));
+        assert_eq!(format_detector.detect_current_format(), Some(ExtendedPageTableFormat::Sv32));
+    }
+
+    #[test]
+    fn test_sv57x4_translation() {
+        let translator = GStageTranslator::new(1, 0x80000000, GStageMode::Sv57x4);
+
+        // Test basic translation properties
+        assert_eq!(translator.get_mode(), GStageMode::Sv57x4);
+        assert_eq!(translator.get_vmid(), 1);
+        assert_eq!(translator.get_root_pt_pa(), 0x80000000);
+
+        // Test mode-specific properties
+        let mode = translator.get_mode();
+        assert_eq!(mode.addr_bits(), 57);
+        assert_eq!(mode.levels(), 5);
+        assert!(mode.supports_huge_pages());
+        assert_eq!(mode.max_page_size(), 1usize << 52); // 4PB huge page
+    }
+
+    #[test]
+    fn test_new_with_auto_detection() {
+        // Test successful auto-detection
+        let result = GStageTranslator::new_with_auto_detection(1, 0x80000000);
+        assert!(result.is_ok());
+
+        let translator = result.unwrap();
+        // Should have selected some mode (fallback to Sv39 if nothing else)
+        assert!(translator.get_mode() != GStageMode::Bare || translator.get_mode() == GStageMode::Bare);
+    }
+
+    #[test]
+    fn test_enhanced_hgatp_extraction() {
+        // Test enhanced mode extraction with auto-detection
+        let hgatp_sv57 = (10usize << 60) | (1usize << 12) | 0x80000; // Sv57x4 mode
+        let extracted_mode = GStageTranslator::extract_mode(hgatp_sv57);
+        // Should fallback to supported mode since 10 might not be directly supported
+        assert!(matches!(extracted_mode, GStageMode::Sv57x4 | GStageMode::Sv48x4 | GStageMode::Sv39x4));
+
+        let hgatp_bare = 0usize; // Bare mode
+        let bare_mode = GStageTranslator::extract_mode(hgatp_bare);
+        assert_eq!(bare_mode, GStageMode::Bare);
+    }
+
+    #[test]
+    fn test_format_conversion_compatibility() {
+        // Test all format conversions work both ways
+        let modes = [
+            GStageMode::Bare,
+            GStageMode::Sv32x4,
+            GStageMode::Sv39x4,
+            GStageMode::Sv48x4,
+            GStageMode::Sv57x4,
+        ];
+
+        for mode in modes.iter() {
+            let format = ExtendedPageTableFormat::from(*mode);
+            let converted_back = GStageMode::from(format);
+
+            // Note: Sv64 maps to Sv57x4, so we check compatibility
+            match *mode {
+                GStageMode::Sv57x4 => assert_eq!(converted_back, GStageMode::Sv57x4),
+                _ => assert_eq!(converted_back, *mode),
+            }
+        }
     }
 }

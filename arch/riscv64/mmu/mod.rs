@@ -12,12 +12,14 @@ pub mod translation;
 pub mod memory;
 pub mod gstage;
 pub mod guest_space;
+pub mod extended_pt;
 
 pub use ptable::*;
 pub use translation::*;
 pub use memory::*;
 pub use gstage::*;
 pub use guest_space::*;
+pub use extended_pt::*;
 
 use crate::arch::riscv64::*;
 
@@ -68,6 +70,9 @@ pub fn init() -> Result<(), &'static str> {
 
     // Initialize guest address space manager
     crate::arch::riscv64::mmu::guest_space::init()?;
+
+    // Initialize extended page table format detection
+    crate::arch::riscv64::mmu::extended_pt::init()?;
 
     Ok(())
 }

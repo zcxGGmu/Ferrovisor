@@ -556,7 +556,7 @@ pub fn create_interrupt_controller() -> Result<*mut dyn InterruptController> {
         Ok(Box::into_raw(apic) as *mut InterruptController)
     }
 
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "x86_64"))]
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "x86_64")))]
     {
         // Use generic controller as fallback
         let generic = Box::new(GenericController::new(0xF0000000, 64));

@@ -117,7 +117,7 @@ impl SimpleHeap {
                     // Return pointer to data
                     let data_ptr = unsafe {
                         NonNull::new_unchecked(
-                            block_ptr.as_ptr() as *mut u8
+                            (block_ptr.as_ptr() as *mut u8)
                                 .add(core::mem::size_of::<BlockHeader>())
                         )
                     };
@@ -150,7 +150,7 @@ impl SimpleHeap {
         // Return pointer to data
         let data_ptr = unsafe {
             NonNull::new_unchecked(
-                block_ptr.as_ptr() as *mut u8
+                (block_ptr.as_ptr() as *mut u8)
                     .add(core::mem::size_of::<BlockHeader>())
             )
         };
@@ -165,7 +165,7 @@ impl SimpleHeap {
         // Get the block header
         let block_ptr = unsafe {
             NonNull::new_unchecked(
-                ptr.as_ptr() as *mut u8
+                (ptr.as_ptr() as *mut u8)
                     .sub(core::mem::size_of::<BlockHeader>())
                     as *mut BlockHeader
             )
