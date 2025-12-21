@@ -338,16 +338,19 @@ impl HExtensionManager {
 
     /// Configure exception and interrupt delegation
     fn configure_delegation(&self) -> Result<(), &'static str> {
-        // Set up HEDELEG
-        let mut hedeleg = Hedeleg::default();
-        HEDELEG::write(hedeleg.raw());
+        // Use delegation module to configure registers
+        if let Some(deleg_manager) = crate::arch::riscv64::virtualization::delegation::get_manager() {
+            log::debug!("Using delegation module for configuration");
+            // The delegation module already configured during init()
+            Ok(())
+        } else {
+            // Fallback to basic configuration
+            HEDELEG::delegate_all_standard();
+            HIDELEG::delegate_all_standard();
 
-        // Set up HIDELEG
-        let mut hideleg = Hideleg::default();
-        HIDELEG::write(hideleg.raw());
-
-        log::debug!("H extension delegation configured");
-        Ok(())
+            log::debug!("H extension delegation configured (fallback)");
+            Ok(())
+        }
     }
 
     /// Configure counter enable for virtualization

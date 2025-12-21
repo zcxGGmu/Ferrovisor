@@ -38,6 +38,43 @@ pub enum InterruptCause {
     SupervisorExternal = 9,
 }
 
+impl TryFrom<usize> for ExceptionCode {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(ExceptionCode::InstructionMisaligned),
+            1 => Ok(ExceptionCode::InstructionAccessFault),
+            2 => Ok(ExceptionCode::IllegalInstruction),
+            3 => Ok(ExceptionCode::Breakpoint),
+            4 => Ok(ExceptionCode::LoadMisaligned),
+            5 => Ok(ExceptionCode::LoadAccessFault),
+            6 => Ok(ExceptionCode::StoreMisaligned),
+            7 => Ok(ExceptionCode::StoreAccessFault),
+            8 => Ok(ExceptionCode::ECallFromUMode),
+            9 => Ok(ExceptionCode::ECallFromSMode),
+            11 => Ok(ExceptionCode::ECallFromMMode),
+            12 => Ok(ExceptionCode::InstructionPageFault),
+            13 => Ok(ExceptionCode::LoadPageFault),
+            15 => Ok(ExceptionCode::StorePageFault),
+            _ => Err(()),
+        }
+    }
+}
+
+impl TryFrom<usize> for InterruptCause {
+    type Error = ();
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        match value {
+            1 => Ok(InterruptCause::SupervisorSoftware),
+            5 => Ok(InterruptCause::SupervisorTimer),
+            9 => Ok(InterruptCause::SupervisorExternal),
+            _ => Err(()),
+        }
+    }
+}
+
 /// CSR address definitions
 pub mod address {
     // User-level CSRs
@@ -747,29 +784,77 @@ bitflags! {
     }
 }
 
+/// HEDELEG register flags
+bitflags! {
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Hedeleg: usize {
+        const INSTRUCTION_MISALIGNED = 1 << 0;     // 0
+        const INSTRUCTION_ACCESS_FAULT = 1 << 1;   // 1
+        const ILLEGAL_INSTRUCTION = 1 << 2;        // 2
+        const BREAKPOINT = 1 << 3;                 // 3
+        const LOAD_MISALIGNED = 1 << 4;            // 4
+        const LOAD_ACCESS_FAULT = 1 << 5;          // 5
+        const STORE_MISALIGNED = 1 << 6;           // 6
+        const STORE_ACCESS_FAULT = 1 << 7;         // 7
+        const ECALL_FROM_UMODE = 1 << 8;           // 8
+        const ECALL_FROM_SMODE = 1 << 9;           // 9
+        const ECALL_FROM_MMODE = 1 << 11;          // 11
+        const INSTRUCTION_PAGE_FAULT = 1 << 12;    // 12
+        const LOAD_PAGE_FAULT = 1 << 13;           // 13
+        const STORE_PAGE_FAULT = 1 << 15;          // 15
+    }
+}
+
 /// HEDELEG register (Hypervisor Exception Delegation)
 pub struct HEDELEG;
 impl HEDELEG {
     pub const CSR: usize = address::HEDELEG;
 
     #[inline]
-    pub fn read() -> usize {
-        UsizeCsr(Self::CSR).read()
+    pub fn read() -> Hedeleg {
+        let value = UsizeCsr(Self::CSR).read();
+        Hedeleg::from_bits_truncate(value)
     }
 
     #[inline]
-    pub fn write(value: usize) {
-        UsizeCsr(Self::CSR).write(value);
+    pub fn write(value: Hedeleg) {
+        UsizeCsr(Self::CSR).write(value.bits());
     }
 
     #[inline]
-    pub fn set(bits: usize) {
-        UsizeCsr(Self::CSR).set(bits);
+    pub fn set(bits: Hedeleg) {
+        UsizeCsr(Self::CSR).set(bits.bits());
     }
 
     #[inline]
-    pub fn clear(bits: usize) {
-        UsizeCsr(Self::CSR).clear(bits);
+    pub fn clear(bits: Hedeleg) {
+        UsizeCsr(Self::CSR).clear(bits.bits());
+    }
+
+    /// Delegate all standard exceptions to supervisor
+    #[inline]
+    pub fn delegate_all_standard() {
+        let hedeleg = Hedeleg::INSTRUCTION_MISALIGNED |
+                     Hedeleg::INSTRUCTION_ACCESS_FAULT |
+                     Hedeleg::ILLEGAL_INSTRUCTION |
+                     Hedeleg::BREAKPOINT |
+                     Hedeleg::LOAD_MISALIGNED |
+                     Hedeleg::LOAD_ACCESS_FAULT |
+                     Hedeleg::STORE_MISALIGNED |
+                     Hedeleg::STORE_ACCESS_FAULT |
+                     Hedeleg::ECALL_FROM_UMODE |
+                     Hedeleg::ECALL_FROM_SMODE |
+                     Hedeleg::INSTRUCTION_PAGE_FAULT |
+                     Hedeleg::LOAD_PAGE_FAULT |
+                     Hedeleg::STORE_PAGE_FAULT;
+        Self::write(hedeleg);
+    }
+
+    /// Check if an exception is delegated
+    #[inline]
+    pub fn is_delegated(exception_code: ExceptionCode) -> bool {
+        let hedeleg = Self::read();
+        hedeleg.contains(Hedeleg::from_bits(1 << exception_code as usize).unwrap())
     }
 }
 
@@ -811,6 +896,29 @@ impl HIDELEG {
     #[inline]
     pub fn clear(bits: Hideleg) {
         UsizeCsr(Self::CSR).clear(bits.bits());
+    }
+
+    /// Delegate all standard supervisor interrupts
+    #[inline]
+    pub fn delegate_all_standard() {
+        let hideleg = Hideleg::SSIP |
+                     Hideleg::VSSIP |
+                     Hideleg::STIP |
+                     Hideleg::VSTIP |
+                     Hideleg::SEIP |
+                     Hideleg::VSEIP;
+        Self::write(hideleg);
+    }
+
+    /// Check if an interrupt is delegated
+    #[inline]
+    pub fn is_delegated(interrupt: InterruptCause) -> bool {
+        let hideleg = Self::read();
+        match interrupt {
+            InterruptCause::SupervisorSoftware => hideleg.contains(Hideleg::SSIP),
+            InterruptCause::SupervisorTimer => hideleg.contains(Hideleg::STIP),
+            InterruptCause::SupervisorExternal => hideleg.contains(Hideleg::SEIP),
+        }
     }
 }
 
@@ -1497,5 +1605,48 @@ mod tests {
         assert_eq!(virtualization::HGATP::extract_ppn(hgatp_value), ppn);
         assert_eq!(virtualization::HGATP::extract_vmid(hgatp_value), vmid);
         assert_eq!(virtualization::HGATP::extract_mode(hgatp_value), mode);
+    }
+
+    #[test]
+    fn test_hedeleg_delegation() {
+        // Test HEDELEG bitflags
+        let hedeleg = Hedeleg::ILLEGAL_INSTRUCTION | Hedeleg::BREAKPOINT;
+        HEDELEG::write(hedeleg);
+        let read_hedeleg = HEDELEG::read();
+        assert!(read_hedeleg.contains(Hedeleg::ILLEGAL_INSTRUCTION));
+        assert!(read_hedeleg.contains(Hedeleg::BREAKPOINT));
+
+        // Test delegation check
+        assert!(HEDELEG::is_delegated(ExceptionCode::IllegalInstruction));
+        assert!(HEDELEG::is_delegated(ExceptionCode::Breakpoint));
+        assert!(!HEDELEG::is_delegated(ExceptionCode::InstructionMisaligned));
+
+        // Test delegate_all_standard
+        HEDELEG::delegate_all_standard();
+        let standard_hedeleg = HEDELEG::read();
+        assert!(standard_hedeleg.contains(Hedeleg::ILLEGAL_INSTRUCTION));
+        assert!(standard_hedeleg.contains(Hedeleg::ECALL_FROM_UMODE));
+    }
+
+    #[test]
+    fn test_hideleg_delegation() {
+        // Test HIDELEG bitflags
+        let hideleg = Hideleg::SSIP | Hideleg::SEIP;
+        HIDELEG::write(hideleg);
+        let read_hideleg = HIDELEG::read();
+        assert!(read_hideleg.contains(Hideleg::SSIP));
+        assert!(read_hideleg.contains(Hideleg::SEIP));
+
+        // Test delegation check
+        assert!(HIDELEG::is_delegated(InterruptCause::SupervisorSoftware));
+        assert!(HIDELEG::is_delegated(InterruptCause::SupervisorExternal));
+        assert!(!HIDELEG::is_delegated(InterruptCause::SupervisorTimer));
+
+        // Test delegate_all_standard
+        HIDELEG::delegate_all_standard();
+        let standard_hideleg = HIDELEG::read();
+        assert!(standard_hideleg.contains(Hideleg::SSIP));
+        assert!(standard_hideleg.contains(Hideleg::STIP));
+        assert!(standard_hideleg.contains(Hideleg::SEIP));
     }
 }

@@ -10,10 +10,12 @@ pub mod hextension;
 pub mod vcpu;
 pub mod vm;
 pub mod devices;
+pub mod delegation;
 
 pub use hextension::*;
 pub use vcpu::*;
 pub use vm::*;
+pub use delegation::*;
 
 use crate::arch::riscv64::*;
 
@@ -42,6 +44,9 @@ pub fn init() -> Result<(), &'static str> {
     unsafe {
         H_EXTENSION = Some(h_ext);
     }
+
+    // Initialize exception delegation
+    delegation::init()?;
 
     // Initialize VM manager
     let vm_manager = VmManager::new();
@@ -121,14 +126,45 @@ fn handle_hypervisor_trap(trap_info: &HypervisorTrapInfo) -> Result<(), &'static
     let is_interrupt = (trap_info.cause & 0x80000000) != 0;
 
     if is_interrupt {
-        // Handle virtual interrupt
-        handle_virtual_interrupt(trap_info)?;
-    } else {
-        // Handle guest exception
-        handle_guest_exception(trap_info)?;
-    }
+        // Handle virtual interrupt with delegation
+        let interrupt_cause = trap_info.cause & 0x7FFFFFFF;
+        let interrupt = match interrupt_cause {
+            1 => InterruptCause::SupervisorSoftware,
+            5 => InterruptCause::SupervisorTimer,
+            9 => InterruptCause::SupervisorExternal,
+            _ => {
+                log::warn!("Unknown interrupt cause: {}", interrupt_cause);
+                return Err("Unknown interrupt cause");
+            }
+        };
 
-    Ok(())
+        let delegation_result = delegation::handle_interrupt(
+            interrupt,
+            false, // This is a real interrupt, not virtual
+            None   // VCPU ID would be available from context
+        );
+
+        if delegation_result.should_delegate && delegation_result.to_guest {
+            return handle_virtual_interrupt(trap_info);
+        } else {
+            return handle_hypervisor_interrupt(trap_info, interrupt);
+        }
+    } else {
+        // Handle guest exception with delegation
+        let exception_code = ExceptionCode::try_from(trap_info.cause)
+            .map_err(|_| "Invalid exception code")?;
+
+        let delegation_result = delegation::handle_exception(
+            exception_code,
+            None // VCPU ID would be available from context
+        );
+
+        if delegation_result.should_delegate && delegation_result.to_guest {
+            return handle_guest_exception(trap_info);
+        } else {
+            return handle_hypervisor_exception(trap_info, exception_code);
+        }
+    }
 }
 
 /// Handle virtual interrupt
@@ -185,6 +221,66 @@ fn handle_guest_exception(trap_info: &HypervisorTrapInfo) -> Result<(), &'static
     }
 
     Ok(())
+}
+
+/// Handle hypervisor exception (when delegation is disabled)
+fn handle_hypervisor_exception(trap_info: &HypervisorTrapInfo,
+                               exception_code: ExceptionCode) -> Result<(), &'static str> {
+    log::debug!("Handling hypervisor exception: {:?}", exception_code);
+
+    match exception_code {
+        ExceptionCode::IllegalInstruction => {
+            log::debug!("Hypervisor illegal instruction at {:#x}", trap_info.sepc);
+            // Handle hypervisor-specific illegal instructions
+            match trap_info.htinst & 0xFFFF {
+                0x102 => {
+                    // HFENCE.VVMA
+                    log::debug!("HFENCE.VVMA instruction");
+                    // Handle hypervisor fence
+                    Ok(())
+                }
+                _ => {
+                    log::error!("Unknown hypervisor illegal instruction: {:#x}", trap_info.htinst);
+                    Err("Unknown hypervisor illegal instruction")
+                }
+            }
+        }
+        ExceptionCode::InstructionPageFault |
+        ExceptionCode::LoadPageFault |
+        ExceptionCode::StorePageFault => {
+            log::debug!("Hypervisor page fault at {:#x}", trap_info.tval);
+            // Handle hypervisor page faults (e.g., accessing guest memory)
+            Ok(())
+        }
+        _ => {
+            log::warn!("Unhandled hypervisor exception: {:?}", exception_code);
+            Err("Unhandled hypervisor exception")
+        }
+    }
+}
+
+/// Handle hypervisor interrupt (when delegation is disabled)
+fn handle_hypervisor_interrupt(trap_info: &HypervisorTrapInfo,
+                                interrupt: InterruptCause) -> Result<(), &'static str> {
+    log::debug!("Handling hypervisor interrupt: {:?}", interrupt);
+
+    match interrupt {
+        InterruptCause::SupervisorTimer => {
+            log::debug!("Hypervisor timer interrupt");
+            // Handle hypervisor timer (e.g., scheduling)
+            Ok(())
+        }
+        InterruptCause::SupervisorExternal => {
+            log::debug!("Hypervisor external interrupt");
+            // Handle hypervisor external interrupts (e.g., IPI)
+            Ok(())
+        }
+        InterruptCause::SupervisorSoftware => {
+            log::debug!("Hypervisor software interrupt");
+            // Handle hypervisor software interrupts (e.g., IPI)
+            Ok(())
+        }
+    }
 }
 
 /// Handle instruction address misaligned
