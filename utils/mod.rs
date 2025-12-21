@@ -7,6 +7,8 @@ pub mod log;
 pub mod console;
 pub mod bitmap;
 pub mod list;
+pub mod time;
+pub mod random;
 
 // Re-export commonly used utilities
 pub use self::log::*;

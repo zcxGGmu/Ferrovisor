@@ -13,11 +13,16 @@ pub mod chip;
 pub mod handler;
 pub mod exception;
 pub mod msi;
+pub mod affinity;
 
 // Re-export commonly used types
 pub use chip::{Plic, Aplic, Imsic, AplicSourceCfg, AplicMsiConfig, ImsicGlobalConfig, ImsicLocalConfig};
 pub use chip::{AplicStats, ImsicStats, create_aplic, create_imsic, init_nextgen_interrupts};
 pub use msi::{MsiAddress, MsiController, MsiXController, MsiXVector, create_msi_controller, create_msix_controller};
+pub use affinity::{InterruptAffinityManager, CpuMask, CpuTopology, AffinityHints, LoadBalanceStrategy};
+pub use affinity::{CpuIrqStats, SystemIrqStats, init as init_affinity, get as get_affinity_manager};
+// Re-export handler and descriptor types
+pub use {IrqManager, InterruptDescriptor, InterruptHandler};
 
 /// Interrupt number type
 pub type IrqNumber = u32;
@@ -90,12 +95,22 @@ pub struct InterruptDescriptor {
     pub irq_type: IrqType,
     /// Priority
     pub priority: Priority,
-    /// CPU affinity
+    /// CPU affinity (legacy u64 mask for compatibility)
     pub cpu_affinity: u64,
+    /// Advanced CPU affinity mask
+    pub affinity_mask: Option<CpuMask>,
+    /// Affinity hints for optimization
+    pub affinity_hints: Option<AffinityHints>,
+    /// Whether auto-affinity is enabled
+    pub auto_affinity: bool,
     /// Handler function
     pub handler: Option<InterruptHandler>,
     /// Handler context
     pub context: Option<*mut core::ffi::c_void>,
+    /// Last CPU that handled this interrupt
+    pub last_cpu: Option<u32>,
+    /// Migration count
+    pub migration_count: u32,
 }
 
 impl InterruptDescriptor {
@@ -105,10 +120,46 @@ impl InterruptDescriptor {
             irq,
             irq_type,
             priority,
-            cpu_affinity: 0, // All CPUs by default
+            cpu_affinity: u64::MAX, // All CPUs by default
+            affinity_mask: None,
+            affinity_hints: None,
+            auto_affinity: true, // Enable auto-affinity by default
             handler: None,
             context: None,
+            last_cpu: None,
+            migration_count: 0,
         }
+    }
+
+    /// Set advanced CPU affinity mask
+    pub fn set_affinity_mask(&mut self, mask: CpuMask) {
+        self.affinity_mask = Some(mask);
+        self.cpu_affinity = mask.bits();
+    }
+
+    /// Set affinity hints
+    pub fn set_affinity_hints(&mut self, hints: AffinityHints) {
+        self.affinity_hints = Some(hints);
+    }
+
+    /// Enable/disable auto-affinity
+    pub fn set_auto_affinity(&mut self, enabled: bool) {
+        self.auto_affinity = enabled;
+    }
+
+    /// Get current affinity mask (fallback to legacy field)
+    pub fn get_affinity_mask(&self) -> CpuMask {
+        self.affinity_mask.unwrap_or_else(|| CpuMask::from_bits(self.cpu_affinity))
+    }
+
+    /// Update last CPU and check for migration
+    pub fn update_cpu(&mut self, cpu: u32) -> bool {
+        let migrated = self.last_cpu.map_or(true, |last| last != cpu);
+        if migrated {
+            self.migration_count += 1;
+        }
+        self.last_cpu = Some(cpu);
+        migrated
     }
 
     /// Set handler
@@ -279,9 +330,141 @@ impl IrqManager {
 
         if let Some(ref mut descriptor) = descriptors[irq] {
             descriptor.cpu_affinity = cpu_mask;
+
+            // Update affinity manager if available
+            if let Some(affinity_mgr) = crate::core::irq::affinity::get() {
+                let mask = CpuMask::from_bits(cpu_mask);
+                affinity_mgr.set_irq_affinity(irq, mask, false)?;
+            }
+
             Ok(())
         } else {
             Err(Error::NotFound)
+        }
+    }
+
+    /// Set advanced CPU affinity for an IRQ
+    pub fn set_advanced_affinity(&self, irq: IrqNumber, mask: CpuMask) -> Result<()> {
+        let mut descriptors = self.descriptors.lock();
+        let irq = irq as usize;
+
+        if irq >= 1024 {
+            return Err(Error::InvalidArgument);
+        }
+
+        if let Some(ref mut descriptor) = descriptors[irq] {
+            descriptor.set_affinity_mask(mask);
+
+            // Update affinity manager if available
+            if let Some(affinity_mgr) = crate::core::irq::affinity::get() {
+                affinity_mgr.set_irq_affinity(irq, mask, false)?;
+            }
+
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
+    /// Set affinity hints for an IRQ
+    pub fn set_affinity_hints(&self, irq: IrqNumber, hints: AffinityHints) -> Result<()> {
+        let mut descriptors = self.descriptors.lock();
+        let irq = irq as usize;
+
+        if irq >= 1024 {
+            return Err(Error::InvalidArgument);
+        }
+
+        if let Some(ref mut descriptor) = descriptors[irq] {
+            descriptor.set_affinity_hints(hints);
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
+    /// Enable/disable auto-affinity for an IRQ
+    pub fn set_auto_affinity(&self, irq: IrqNumber, enabled: bool) -> Result<()> {
+        let mut descriptors = self.descriptors.lock();
+        let irq = irq as usize;
+
+        if irq >= 1024 {
+            return Err(Error::InvalidArgument);
+        }
+
+        if let Some(ref mut descriptor) = descriptors[irq] {
+            descriptor.set_auto_affinity(enabled);
+            Ok(())
+        } else {
+            Err(Error::NotFound)
+        }
+    }
+
+    /// Get optimal affinity for an IRQ
+    pub fn get_optimal_affinity(&self, irq: IrqNumber) -> Option<CpuMask> {
+        let descriptors = self.descriptors.lock();
+        let irq = irq as usize;
+
+        if irq >= 1024 {
+            return None;
+        }
+
+        if let Some(ref descriptor) = descriptors[irq] {
+            if let Some(affinity_mgr) = crate::core::irq::affinity::get() {
+                Some(affinity_mgr.calculate_optimal_affinity(descriptor))
+            } else {
+                Some(descriptor.get_affinity_mask())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Handle an interrupt with affinity management
+    pub fn handle_irq_with_affinity(&self, irq: IrqNumber) -> Result<(u32, u32)> {
+        let start_time = crate::utils::time::timestamp_ns();
+
+        // Get current CPU
+        let current_cpu = crate::arch::cpu::get_current_cpu_id().unwrap_or(0);
+
+        // Get descriptor and handle interrupt
+        let result = self.handle_irq(irq);
+
+        let end_time = crate::utils::time::timestamp_ns();
+        let processing_time = (end_time - start_time) as u32;
+
+        // Update affinity statistics
+        if let Some(affinity_mgr) = crate::core::irq::affinity::get() {
+            let descriptors = self.descriptors.lock();
+            if (irq as usize) < 1024 {
+                if let Some(ref descriptor) = descriptors[irq as usize] {
+                    // Record statistics
+                    affinity_mgr.record_interrupt(current_cpu, irq, descriptor, processing_time);
+
+                    // Update last CPU
+                    drop(descriptors); // Release lock before modifying
+                    let mut descriptors = self.descriptors.lock();
+                    if let Some(ref mut descriptor) = descriptors[irq as usize] {
+                        descriptor.update_cpu(current_cpu);
+                    }
+                }
+            }
+        }
+
+        Ok((current_cpu, processing_time))
+    }
+
+    /// Balance all interrupts
+    pub fn balance_interrupts(&self) -> Result<usize> {
+        if let Some(affinity_mgr) = crate::core::irq::affinity::get() {
+            let descriptors = self.descriptors.lock();
+            let descriptor_vec: Vec<InterruptDescriptor> = descriptors.iter()
+                .filter_map(|d| d.clone())
+                .collect();
+
+            affinity_mgr.balance_interrupts(&descriptor_vec)
+        } else {
+            Ok(0)
         }
     }
 }
@@ -298,6 +481,10 @@ pub fn get() -> &'static IrqManager {
 pub fn init() -> Result<()> {
     crate::info!("Initializing interrupt handling");
 
+    // Initialize interrupt affinity manager first
+    let num_cpus = crate::arch::cpu::get_cpu_count().unwrap_or(4);
+    affinity::init(num_cpus)?;
+
     // Initialize interrupt controller
     chip::init()?;
 
@@ -307,8 +494,49 @@ pub fn init() -> Result<()> {
     // Initialize interrupt handlers
     handler::init()?;
 
+    // Configure load balancing strategy
+    if let Some(affinity_mgr) = affinity::get() {
+        // Use package-aware strategy by default for better cache locality
+        affinity_mgr.set_strategy(LoadBalanceStrategy::PackageAware);
+    }
+
     crate::info!("Interrupt handling initialized successfully");
     Ok(())
+}
+
+/// Initialize interrupt handling with custom CPU count
+pub fn init_with_cpus(num_cpus: u32) -> Result<()> {
+    crate::info!("Initializing interrupt handling with {} CPUs", num_cpus);
+
+    // Initialize interrupt affinity manager with specified CPU count
+    affinity::init(num_cpus)?;
+
+    // Initialize interrupt controller
+    chip::init()?;
+
+    // Initialize exception handling
+    exception::init()?;
+
+    // Initialize interrupt handlers
+    handler::init()?;
+
+    // Configure load balancing strategy
+    if let Some(affinity_mgr) = affinity::get() {
+        affinity_mgr.set_strategy(LoadBalanceStrategy::PackageAware);
+    }
+
+    crate::info!("Interrupt handling initialized successfully");
+    Ok(())
+}
+
+/// Perform periodic interrupt affinity balancing
+pub fn perform_affinity_balancing() -> Result<usize> {
+    get().balance_interrupts()
+}
+
+/// Get interrupt affinity statistics
+pub fn get_affinity_stats() -> Option<SystemIrqStats> {
+    affinity::get().map(|mgr| mgr.get_system_stats())
 }
 
 /// Enable interrupts

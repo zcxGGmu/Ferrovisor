@@ -10,6 +10,7 @@ pub mod riscv64;
 pub mod x86_64;
 
 pub mod common;
+pub mod cpu;
 
 #[cfg(target_arch = "aarch64")]
 pub use arm64::*;
