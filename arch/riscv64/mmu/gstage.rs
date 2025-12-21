@@ -11,6 +11,7 @@
 use crate::arch::riscv64::cpu::csr::*;
 use crate::arch::riscv64::mmu::ptable::*;
 use crate::arch::riscv64::mmu::extended_pt::*;
+use crate::arch::riscv64::mmu::tlb::*;
 use bitflags::bitflags;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -308,12 +309,14 @@ pub struct GStageTranslator {
     vmid: u16,
     /// Root page table physical address
     root_pt_pa: usize,
-    /// Translation cache
+    /// Translation cache (legacy)
     cache: GStageTranslationCache,
     /// Translation statistics
     translations: AtomicUsize,
     /// Page faults
     page_faults: AtomicUsize,
+    /// Use TLB management
+    use_tlb: bool,
 }
 
 impl GStageTranslator {
@@ -329,6 +332,7 @@ impl GStageTranslator {
             cache: GStageTranslationCache::new(1024),
             translations: AtomicUsize::new(0),
             page_faults: AtomicUsize::new(0),
+            use_tlb: true, // Enable TLB by default
         }
     }
 
@@ -401,16 +405,69 @@ impl GStageTranslator {
 
     /// Translate guest physical address to host physical address
     pub fn translate(&self, gpa: usize) -> Result<GStageTranslationResult, GStageFault> {
-        // Check cache first
+        // Try TLB first if enabled
+        if self.use_tlb {
+            if let Some(manager) = get_manager() {
+                if let Some(hpa) = manager.translate_gstage(gpa, 0, self.vmid) {
+                    return Ok(GStageTranslationResult {
+                        hpa,
+                        permissions: GStagePermissions::READ | GStagePermissions::WRITE | GStagePermissions::EXECUTE,
+                        page_size: 4096,
+                        cached: true,
+                    });
+                }
+            }
+        }
+
+        // Check legacy cache second
         if let Some(cached_result) = self.cache.lookup(gpa) {
+            // Insert into TLB for future lookups
+            if self.use_tlb {
+                if let Some(manager) = get_manager_mut() {
+                    let tlb_entry = TlbEntry::new(
+                        cached_result.hpa, // For G-stage, GPA is stored in paddr field
+                        cached_result.hpa,
+                        0, // ASID is 0 for G-stage
+                        self.vmid,
+                        cached_result.page_size,
+                        TlbPermissions::VALID |
+                            if cached_result.permissions.contains(GStagePermissions::READ) { TlbPermissions::READ } else { TlbPermissions::empty() } |
+                            if cached_result.permissions.contains(GStagePermissions::WRITE) { TlbPermissions::WRITE } else { TlbPermissions::empty() } |
+                            if cached_result.permissions.contains(GStagePermissions::EXECUTE) { TlbPermissions::EXECUTE } else { TlbPermissions::empty() },
+                        TlbEntryType::GStage,
+                        0,
+                    );
+                    manager.insert_gstage(tlb_entry);
+                }
+            }
             return Ok(cached_result);
         }
 
         // Perform full translation
         let result = self.translate_full(gpa)?;
 
-        // Cache the result
+        // Cache the result in legacy cache
         self.cache.insert(gpa, &result);
+
+        // Insert into TLB for future lookups
+        if self.use_tlb {
+            if let Some(manager) = get_manager_mut() {
+                let tlb_entry = TlbEntry::new(
+                    result.hpa, // For G-stage, GPA is stored in paddr field
+                    result.hpa,
+                    0, // ASID is 0 for G-stage
+                    self.vmid,
+                    result.page_size,
+                    TlbPermissions::VALID |
+                        if result.permissions.contains(GStagePermissions::READ) { TlbPermissions::READ } else { TlbPermissions::empty() } |
+                        if result.permissions.contains(GStagePermissions::WRITE) { TlbPermissions::WRITE } else { TlbPermissions::empty() } |
+                        if result.permissions.contains(GStagePermissions::EXECUTE) { TlbPermissions::EXECUTE } else { TlbPermissions::empty() },
+                    TlbEntryType::GStage,
+                    0,
+                );
+                manager.insert_gstage(tlb_entry);
+            }
+        }
 
         Ok(result)
     }
@@ -725,9 +782,44 @@ impl GStageTranslator {
 
     /// Invalidate G-stage TLB entries
     pub fn invalidate_tlb(&self, gpa: usize, size: usize) {
-        // Use SBI to invalidate G-stage TLB
+        // Invalidate software TLB entries
+        if self.use_tlb {
+            if let Some(manager) = get_manager_mut() {
+                // Invalidate G-stage entries for this VMID and address range
+                let count = manager.gstage_tlb.invalidate_range(gpa, size, 0, self.vmid);
+                if count > 0 {
+                    log::debug!("Invalidated {} G-stage TLB entries for GPA {:#x}, size {}", count, gpa, size);
+                }
+            }
+        }
+
+        // Use SBI to invalidate hardware G-stage TLB
         // This would typically call sbi_hfence_gvma()
-        log::debug!("Invalidating G-stage TLB for GPA {:#x}, size {}", gpa, size);
+        HardwareTlb::flush_gstage_addr(gpa, self.vmid);
+        log::debug!("Invalidated hardware G-stage TLB for GPA {:#x}, size {}", gpa, size);
+    }
+
+    /// Invalidate all G-stage TLB entries for this VM
+    pub fn invalidate_all_tlb(&self) {
+        // Invalidate software TLB entries
+        if self.use_tlb {
+            if let Some(manager) = get_manager_mut() {
+                let count = manager.gstage_tlb.invalidate_vmid(self.vmid);
+                if count > 0 {
+                    log::debug!("Invalidated {} G-stage TLB entries for VMID {}", count, self.vmid);
+                }
+            }
+        }
+
+        // Flush hardware G-stage TLB
+        HardwareTlb::flush_gstage_vmid(self.vmid);
+        log::debug!("Flushed hardware G-stage TLB for VMID {}", self.vmid);
+    }
+
+    /// Enable or disable TLB usage
+    pub fn set_tlb_enabled(&mut self, enabled: bool) {
+        self.use_tlb = enabled;
+        log::info!("TLB for G-stage translation {}", if enabled { "enabled" } else { "disabled" });
     }
 
     /// Get translation statistics
