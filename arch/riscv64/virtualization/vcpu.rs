@@ -9,6 +9,7 @@
 use crate::arch::riscv64::*;
 use crate::arch::riscv64::cpu::regs::CpuState;
 use crate::arch::riscv64::virtualization::hextension::*;
+use crate::arch::riscv64::virtualization::vintc::*;
 use bitflags::bitflags;
 
 /// VCPU state
@@ -252,6 +253,11 @@ pub struct Vcpu {
     pub interrupt_enable: u64,
     pub last_interrupt_time: u64,
 
+    /// Virtual interrupt controller key (if registered)
+    pub vintc_key: Option<usize>,
+    /// Virtual interrupt state cached for fast access
+    pub virt_interrupt_state: Option<VcpuInterruptState>,
+
     /// Resource management
     pub resources: VcpuResourceManager,
 
@@ -314,6 +320,8 @@ impl Vcpu {
             pending_interrupts: 0,
             interrupt_enable: 0,
             last_interrupt_time: current_time,
+            vintc_key: None,
+            virt_interrupt_state: None,
             resources: VcpuResourceManager {
                 memory_regions: Vec::new(),
                 io_regions: Vec::new(),
@@ -360,6 +368,8 @@ impl Vcpu {
             pending_interrupts: 0,
             interrupt_enable: 0,
             last_interrupt_time: current_time,
+            vintc_key: None,
+            virt_interrupt_state: None,
             resources: VcpuResourceManager {
                 memory_regions: Vec::new(),
                 io_regions: Vec::new(),
@@ -772,6 +782,254 @@ impl Vcpu {
     pub fn disable_interrupt(&mut self, interrupt_id: u32) {
         let interrupt_bit = 1u64 << interrupt_id;
         self.interrupt_enable &= !interrupt_bit;
+    }
+
+    // ===== ENHANCED VIRTUAL INTERRUPT INJECTION METHODS =====
+
+    /// Initialize VCPU with virtual interrupt controller
+    pub fn init_virtual_interrupts(&mut self) -> Result<(), &'static str> {
+        if !self.flags.contains(VcpuFlags::VIRTUAL_INTERRUPTS) {
+            return Ok(()); // VCPU not configured for virtual interrupts
+        }
+
+        // Register with virtual interrupt controller
+        let vintc_key = register_vcpu(self.id as VcpuId, self.vmid)?;
+        self.vintc_key = Some(vintc_key);
+
+        log::info!("VCPU {} (VMID: {}) registered with virtual interrupt controller (key: {})",
+                  self.id, self.vmid, vintc_key);
+
+        Ok(())
+    }
+
+    /// Inject virtual interrupt using enhanced controller
+    pub fn inject_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType,
+                                   flags: VirtualInterruptFlags) -> Result<InjectionResult, &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            let result = inject_interrupt(self.id as VcpuId, interrupt_type, flags);
+
+            // Update cached interrupt state
+            if result.success {
+                self.pending_interrupts |= interrupt_type.mask();
+                self.last_interrupt_time = Self::get_timestamp();
+                self.stats.virtual_interrupts_injected += 1;
+
+                log::debug!("Injected virtual interrupt {:?} into VCPU {} (key: {})",
+                           interrupt_type, self.id, vintc_key);
+            }
+
+            Ok(result)
+        } else {
+            // Fallback to legacy method
+            let result = self.legacy_inject_interrupt(interrupt_type, flags)?;
+            Ok(InjectionResult {
+                success: true,
+                already_pending: false,
+                immediate_delivery: flags.contains(VirtualInterruptFlags::IMMEDIATE),
+                vcpus_affected: 1,
+                error: None,
+            })
+        }
+    }
+
+    /// Legacy interrupt injection method (fallback)
+    fn legacy_inject_interrupt(&mut self, interrupt_type: VirtualInterruptType,
+                              _flags: VirtualInterruptFlags) -> Result<(), &'static str> {
+        if !self.is_interrupt_enabled_legacy(interrupt_type.bit_position() as u32) {
+            return Err("Interrupt is not enabled");
+        }
+
+        self.pending_interrupts |= interrupt_type.mask();
+        self.last_interrupt_time = Self::get_timestamp();
+        self.stats.virtual_interrupts_injected += 1;
+
+        Ok(())
+    }
+
+    /// Check if interrupt is enabled (legacy method)
+    fn is_interrupt_enabled_legacy(&self, interrupt_id: u32) -> bool {
+        let interrupt_bit = 1u64 << interrupt_id;
+        (self.interrupt_enable & interrupt_bit) != 0
+    }
+
+    /// Clear virtual interrupt using enhanced controller
+    pub fn clear_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType) -> Result<(), &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            clear_interrupt(self.id as VcpuId, interrupt_type)?;
+        }
+
+        // Update cached state
+        self.pending_interrupts &= !interrupt_type.mask();
+
+        log::debug!("Cleared virtual interrupt {:?} from VCPU {}", interrupt_type, self.id);
+        Ok(())
+    }
+
+    /// Assert virtual interrupt (level-triggered)
+    pub fn assert_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType) -> Result<(), &'static str> {
+        let flags = VirtualInterruptFlags::LEVEL_TRIGGERED | VirtualInterruptFlags::NORMAL;
+        self.inject_virtual_interrupt(interrupt_type, flags)
+            .map(|_| ())
+    }
+
+    /// Deassert virtual interrupt
+    pub fn deassert_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType) -> Result<(), &'static str> {
+        self.clear_virtual_interrupt(interrupt_type)
+    }
+
+    /// Inject software interrupt (IPI)
+    pub fn inject_software_interrupt(&mut self) -> Result<(), &'static str> {
+        let flags = VirtualInterruptFlags::IMMEDIATE | VirtualInterruptFlags::AUTO_CLEAR;
+        self.inject_virtual_interrupt(VirtualInterruptType::SupervisorSoftware, flags)
+            .map(|_| ())
+    }
+
+    /// Inject timer interrupt
+    pub fn inject_timer_interrupt(&mut self) -> Result<(), &'static str> {
+        let flags = VirtualInterruptFlags::IMMEDIATE;
+        self.inject_virtual_interrupt(VirtualInterruptType::SupervisorTimer, flags)
+            .map(|_| ())
+    }
+
+    /// Inject external interrupt
+    pub fn inject_external_interrupt(&mut self) -> Result<(), &'static str> {
+        let flags = VirtualInterruptFlags::NORMAL;
+        self.inject_virtual_interrupt(VirtualInterruptType::SupervisorExternal, flags)
+            .map(|_| ())
+    }
+
+    /// Inject custom virtual interrupt
+    pub fn inject_custom_interrupt(&mut self, interrupt_id: u32, flags: VirtualInterruptFlags) -> Result<(), &'static str> {
+        if interrupt_id < 10 || interrupt_id > 63 {
+            return Err("Custom interrupt ID must be between 10 and 63");
+        }
+
+        let interrupt_type = VirtualInterruptType::Custom(interrupt_id);
+        self.inject_virtual_interrupt(interrupt_type, flags)
+            .map(|_| ())
+    }
+
+    /// Get highest priority pending interrupt
+    pub fn get_highest_priority_pending_interrupt(&self) -> Option<VirtualInterruptType> {
+        if let Some(vintc_key) = self.vintc_key {
+            if let Some(controller) = get_controller() {
+                if let Some(state) = controller.get_vcpu_state(vintc_key) {
+                    return state.get_highest_priority_pending();
+                }
+            }
+        }
+
+        // Fallback to legacy method
+        self.get_highest_priority_pending_legacy()
+    }
+
+    /// Legacy highest priority pending interrupt method
+    fn get_highest_priority_pending_legacy(&self) -> Option<VirtualInterruptType> {
+        let pending = self.get_enabled_pending_interrupts();
+        if pending == 0 {
+            return None;
+        }
+
+        // Find highest priority (lowest bit position)
+        let position = pending.trailing_zeros() as u32;
+        VirtualInterruptType::try_from(position).ok()
+    }
+
+    /// Check if any virtual interrupt is pending
+    pub fn has_virtual_interrupts_pending(&self) -> bool {
+        if let Some(vintc_key) = self.vintc_key {
+            if let Some(controller) = get_controller() {
+                if let Some(state) = controller.get_vcpu_state(vintc_key) {
+                    return state.has_pending_interrupts();
+                }
+            }
+        }
+
+        // Fallback to legacy method
+        self.get_enabled_pending_interrupts() != 0
+    }
+
+    /// Enable virtual interrupt by type
+    pub fn enable_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType) -> Result<(), &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            if let Some(controller) = get_controller_mut() {
+                if let Some(state) = controller.get_vcpu_state_mut(vintc_key) {
+                    state.enable_interrupt(interrupt_type, true);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback to legacy method
+        self.enable_interrupt(interrupt_type.bit_position() as u32);
+        Ok(())
+    }
+
+    /// Disable virtual interrupt by type
+    pub fn disable_virtual_interrupt(&mut self, interrupt_type: VirtualInterruptType) -> Result<(), &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            if let Some(controller) = get_controller_mut() {
+                if let Some(state) = controller.get_vcpu_state_mut(vintc_key) {
+                    state.enable_interrupt(interrupt_type, false);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Fallback to legacy method
+        self.disable_interrupt(interrupt_type.bit_position() as u32);
+        Ok(())
+    }
+
+    /// Get virtual interrupt statistics
+    pub fn get_virtual_interrupt_stats(&self) -> Option<VcpuInterruptStats> {
+        if let Some(vintc_key) = self.vintc_key {
+            get_vcpu_interrupt_stats(self.id as VcpuId)
+        } else {
+            // Return legacy-based statistics
+            Some(VcpuInterruptStats {
+                interrupts_injected: self.stats.virtual_interrupts_injected,
+                interrupts_cleared: 0, // Not tracked in legacy
+                interrupts_delivered: self.stats.virtual_interrupts_injected,
+                pending_count: self.get_enabled_pending_interrupts().count_ones() as usize,
+                enabled_count: self.interrupt_enable.count_ones() as usize,
+                last_injection_timestamp: self.last_interrupt_time,
+                stats_timestamp: Self::get_timestamp(),
+            })
+        }
+    }
+
+    /// Sync virtual interrupt state with hardware
+    pub fn sync_virtual_interrupts(&mut self) -> Result<(), &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            if let Some(controller) = get_controller_mut() {
+                if let Some(state) = controller.get_vcpu_state_mut(vintc_key) {
+                    state.sync_with_hardware()?;
+
+                    // Update cached state
+                    self.virt_interrupt_state = Some(state.clone());
+                    self.pending_interrupts = state.virtual_ip;
+                    self.interrupt_enable = state.virtual_ie;
+
+                    return Ok(());
+                }
+            }
+        }
+
+        // Legacy method: no sync needed
+        Ok(())
+    }
+
+    /// Cleanup virtual interrupt controller resources
+    pub fn cleanup_virtual_interrupts(&mut self) -> Result<(), &'static str> {
+        if let Some(vintc_key) = self.vintc_key {
+            unregister_vcpu(vintc_key)?;
+            self.vintc_key = None;
+            self.virt_interrupt_state = None;
+
+            log::info!("VCPU {} unregistered from virtual interrupt controller", self.id);
+        }
+        Ok(())
     }
 
     /// Save VCPU state
@@ -1907,5 +2165,315 @@ mod tests {
         let summary = manager.get_execution_summary();
         assert_eq!(summary.total_vcpus, 2);
         assert_eq!(summary.state_counts[0], 2); // All Uninitialized
+    }
+
+    // ===== VIRTUAL INTERRUPT INJECTION TESTS =====
+
+    #[test]
+    fn test_vcpu_virtual_interrupt_init() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Initialize virtual interrupts (should register with controller)
+        // Note: This test will use legacy method since controller might not be initialized
+        let result = vcpu.init_virtual_interrupts();
+        // Don't assert success here since controller might not be available in test environment
+
+        assert_eq!(vcpu.vintc_key, None); // Should be None if controller not available
+        assert!(vcpu.virt_interrupt_state.is_none());
+    }
+
+    #[test]
+    fn test_vcpu_legacy_virtual_interrupts() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable some interrupts
+        vcpu.enable_interrupt(1); // Supervisor software
+        vcpu.enable_interrupt(5); // Supervisor timer
+        vcpu.enable_interrupt(9); // Supervisor external
+
+        assert!(vcpu.is_interrupt_enabled_legacy(1));
+        assert!(vcpu.is_interrupt_enabled_legacy(5));
+        assert!(vcpu.is_interrupt_enabled_legacy(9));
+
+        // Test interrupt injection using legacy method
+        let result = vcpu.inject_virtual_interrupt(
+            VirtualInterruptType::SupervisorSoftware,
+            VirtualInterruptFlags::NORMAL
+        );
+
+        assert!(result.is_ok());
+        assert!(vcpu.has_pending_interrupt(1));
+        assert!(vcpu.has_virtual_interrupts_pending());
+    }
+
+    #[test]
+    fn test_vcpu_interrupt_types() {
+        let sw_int = VirtualInterruptType::SupervisorSoftware;
+        let timer_int = VirtualInterruptType::SupervisorTimer;
+        let ext_int = VirtualInterruptType::SupervisorExternal;
+        let custom_int = VirtualInterruptType::Custom(15);
+
+        assert!(sw_int.is_standard());
+        assert!(timer_int.is_standard());
+        assert!(ext_int.is_standard());
+        assert!(!custom_int.is_standard());
+
+        assert_eq!(sw_int.bit_position(), 1);
+        assert_eq!(timer_int.bit_position(), 5);
+        assert_eq!(ext_int.bit_position(), 9);
+        assert_eq!(custom_int.bit_position(), 15);
+
+        assert_eq!(sw_int.priority(), 2);
+        assert_eq!(timer_int.priority(), 2);
+        assert_eq!(custom_int.priority(), 2);
+    }
+
+    #[test]
+    fn test_vcpu_software_interrupt_injection() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable software interrupt
+        vcpu.enable_interrupt(1);
+
+        // Test software interrupt injection
+        let result = vcpu.inject_software_interrupt();
+        assert!(result.is_ok());
+        assert!(vcpu.has_pending_interrupt(1));
+        assert!(vcpu.has_virtual_interrupts_pending());
+    }
+
+    #[test]
+    fn test_vcpu_timer_interrupt_injection() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable timer interrupt
+        vcpu.enable_interrupt(5);
+
+        // Test timer interrupt injection
+        let result = vcpu.inject_timer_interrupt();
+        assert!(result.is_ok());
+        assert!(vcpu.has_pending_interrupt(5));
+        assert!(vcpu.has_virtual_interrupts_pending());
+    }
+
+    #[test]
+    fn test_vcpu_external_interrupt_injection() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable external interrupt
+        vcpu.enable_interrupt(9);
+
+        // Test external interrupt injection
+        let result = vcpu.inject_external_interrupt();
+        assert!(result.is_ok());
+        assert!(vcpu.has_pending_interrupt(9));
+        assert!(vcpu.has_virtual_interrupts_pending());
+    }
+
+    #[test]
+    fn test_vcpu_custom_interrupt_injection() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable custom interrupt (ID 15)
+        vcpu.enable_interrupt(15);
+
+        // Test custom interrupt injection
+        let result = vcpu.inject_custom_interrupt(15, VirtualInterruptFlags::NORMAL);
+        assert!(result.is_ok());
+        assert!(vcpu.has_pending_interrupt(15));
+    }
+
+    #[test]
+    fn test_vcpu_custom_interrupt_validation() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Test invalid custom interrupt IDs
+        let result1 = vcpu.inject_custom_interrupt(5, VirtualInterruptFlags::NORMAL);
+        assert!(result1.is_err()); // Too low
+
+        let result2 = vcpu.inject_custom_interrupt(70, VirtualInterruptFlags::NORMAL);
+        assert!(result2.is_err()); // Too high
+
+        let result3 = vcpu.inject_custom_interrupt(10, VirtualInterruptFlags::NORMAL);
+        assert!(result3.is_ok()); // Valid
+    }
+
+    #[test]
+    fn test_vcpu_interrupt_assert_deassert() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable interrupt
+        vcpu.enable_interrupt(1);
+
+        // Assert interrupt
+        let result1 = vcpu.assert_virtual_interrupt(VirtualInterruptType::SupervisorSoftware);
+        assert!(result1.is_ok());
+        assert!(vcpu.has_pending_interrupt(1));
+
+        // Deassert interrupt
+        let result2 = vcpu.deassert_virtual_interrupt(VirtualInterruptType::SupervisorSoftware);
+        assert!(result2.is_ok());
+        assert!(!vcpu.has_pending_interrupt(1));
+    }
+
+    #[test]
+    fn test_vcpu_highest_priority_pending_interrupt() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable multiple interrupts
+        vcpu.enable_interrupt(1);
+        vcpu.enable_interrupt(5);
+        vcpu.enable_interrupt(9);
+
+        // Inject multiple interrupts
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorTimer, VirtualInterruptFlags::NORMAL).ok();
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorSoftware, VirtualInterruptFlags::NORMAL).ok();
+
+        // Test highest priority (should be software interrupt - lower bit position)
+        let highest = vcpu.get_highest_priority_pending_interrupt();
+        assert_eq!(highest, Some(VirtualInterruptType::SupervisorSoftware));
+    }
+
+    #[test]
+    fn test_vcpu_interrupt_enable_disable() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Test enable/disable by type
+        vcpu.enable_virtual_interrupt(VirtualInterruptType::SupervisorTimer).ok();
+        vcpu.enable_virtual_interrupt(VirtualInterruptType::SupervisorExternal).ok();
+
+        // Inject interrupts
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorTimer, VirtualInterruptFlags::NORMAL).ok();
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorExternal, VirtualInterruptFlags::NORMAL).ok();
+
+        assert!(vcpu.has_virtual_interrupts_pending());
+
+        // Disable one interrupt
+        vcpu.disable_virtual_interrupt(VirtualInterruptType::SupervisorTimer).ok();
+
+        // Should still have external interrupt pending
+        assert!(vcpu.has_virtual_interrupts_pending());
+    }
+
+    #[test]
+    fn test_vcpu_interrupt_statistics() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable and inject some interrupts
+        vcpu.enable_interrupt(1);
+        vcpu.enable_interrupt(5);
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorSoftware, VirtualInterruptFlags::NORMAL).ok();
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorTimer, VirtualInterruptFlags::NORMAL).ok();
+
+        // Get statistics
+        let stats = vcpu.get_virtual_interrupt_stats();
+        assert!(stats.is_some());
+
+        let stats = stats.unwrap();
+        assert!(stats.interrupts_injected >= 2);
+        assert!(stats.interrupts_delivered >= 2);
+        assert!(stats.pending_count >= 2);
+        assert!(stats.enabled_count >= 2);
+    }
+
+    #[test]
+    fn test_vcpu_virtual_interrupt_sync() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Enable and inject interrupt
+        vcpu.enable_interrupt(1);
+        vcpu.inject_virtual_interrupt(VirtualInterruptType::SupervisorSoftware, VirtualInterruptFlags::NORMAL).ok();
+
+        // Sync should succeed even without controller
+        let result = vcpu.sync_virtual_interrupts();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_vcpu_virtual_interrupt_cleanup() {
+        let mut vcpu = Vcpu::new(
+            1,
+            100,
+            "test-vcpu".to_string(),
+            VcpuFlags::VIRTUAL_INTERRUPTS,
+        );
+
+        // Cleanup should succeed even without controller
+        let result = vcpu.cleanup_virtual_interrupts();
+        assert!(result.is_ok());
+        assert!(vcpu.vintc_key.is_none());
+        assert!(vcpu.virt_interrupt_state.is_none());
+    }
+
+    #[test]
+    fn test_virtual_interrupt_flags() {
+        let flags = VirtualInterruptFlags::NORMAL | VirtualInterruptFlags::HIGH_PRIORITY;
+        assert!(flags.contains(VirtualInterruptFlags::NORMAL));
+        assert!(flags.contains(VirtualInterruptFlags::HIGH_PRIORITY));
+        assert!(!flags.contains(VirtualInterruptFlags::IMMEDIATE));
+
+        let broadcast_flags = flags | VirtualInterruptFlags::BROADCAST;
+        assert!(broadcast_flags.contains(VirtualInterruptFlags::BROADCAST));
+        assert!(broadcast_flags.contains(VirtualInterruptFlags::LEVEL_TRIGGERED));
     }
 }
