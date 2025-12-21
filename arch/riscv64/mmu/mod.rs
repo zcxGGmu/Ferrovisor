@@ -10,10 +10,14 @@
 pub mod ptable;
 pub mod translation;
 pub mod memory;
+pub mod gstage;
+pub mod guest_space;
 
 pub use ptable::*;
 pub use translation::*;
 pub use memory::*;
+pub use gstage::*;
+pub use guest_space::*;
 
 use crate::arch::riscv64::*;
 
@@ -58,6 +62,13 @@ pub fn init() -> Result<(), &'static str> {
     }
 
     log::info!("RISC-V MMU initialized successfully");
+
+    // Initialize G-stage translation
+    crate::arch::riscv64::mmu::gstage::init()?;
+
+    // Initialize guest address space manager
+    crate::arch::riscv64::mmu::guest_space::init()?;
+
     Ok(())
 }
 
@@ -231,5 +242,41 @@ mod tests {
         barrier::acquire();
         barrier::release();
         barrier::io();
+    }
+
+    #[test]
+    fn test_gstage_mode() {
+        use crate::arch::riscv64::mmu::gstage::*;
+
+        assert_eq!(GStageMode::Sv39x4.addr_bits(), 39);
+        assert_eq!(GStageMode::Sv48x4.addr_bits(), 48);
+        assert_eq!(GStageMode::Sv32x4.levels(), 2);
+    }
+
+    #[test]
+    fn test_gstage_hgatp() {
+        use crate::arch::riscv64::mmu::gstage::*;
+
+        let vmid = 100;
+        let ppn = 0x87654321;
+        let mode = GStageMode::Sv39x4;
+
+        let hgatp = GStageTranslator::make_hgatp(vmid, ppn, mode);
+
+        assert_eq!(GStageTranslator::extract_vmid(hgatp), vmid);
+        assert_eq!(GStageTranslator::extract_mode(hgatp), mode);
+    }
+
+    #[test]
+    fn test_guest_address_space() {
+        use crate::arch::riscv64::mmu::guest_space::*;
+
+        let mut space = GuestAddressSpace::new(1, GStageMode::Sv39x4).unwrap();
+
+        // Test memory mapping
+        let result = space.map_memory(0x10000000, 0x80000000, 0x1000,
+                                        true, true, false, "test");
+        assert!(result.is_ok());
+        assert_eq!(space.get_regions().len(), 1);
     }
 }
