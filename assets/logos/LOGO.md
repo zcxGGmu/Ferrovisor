@@ -46,7 +46,26 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 - 推荐**主要使用**这个版本
 ```
 
-### 4. **logo-favicon.svg** - 图标版本
+### 4. **logo-multiarch.svg** - 多架构版本
+```
+特点：
+- 明确展示三大架构支持：RISC-V、ARM64、x86_64
+- 使用不同颜色区分架构
+- 三角形布局体现平衡和兼容性
+- 适合技术文档和架构说明
+```
+
+### 5. **logo-universal.svg** - 通用架构版本 ⭐新推荐
+```
+特点：
+- 抽象化的架构表现
+- 中心化hypervisor设计
+- 轨道节点展示多架构支持
+- 现代渐变色彩，视觉效果突出
+- 推荐**主要使用**这个版本
+```
+
+### 6. **logo-favicon.svg** - 图标版本
 ```
 特点：
 - 32x32像素优化
@@ -60,16 +79,22 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 
 | 版本 | 使用场景 | 文件格式 |
 |------|----------|----------|
-| logo-modern | 主要品牌标识、网站头部 | SVG/PNG |
+| logo-universal | 主要品牌标识、网站头部 ⭐推荐 | SVG/PNG |
+| logo-multiarch | 架构文档、技术展示 | SVG/PNG |
+| logo-modern | 传统品牌标识、演示材料 | SVG/PNG |
 | logo-minimal | 技术文档、代码仓库 | SVG/PNG |
 | logo | 传统文档、打印材料 | SVG/PNG |
 | favicon | 网站图标、浏览器标签 | PNG |
 
 ### 颜色规范
 
-- **主色调**：`#667eea` → `#764ba2` (紫色渐变)
+- **主色调**：`#667eea` → `#764ba2` → `#f093fb` (紫色渐变)
 - **金属色**：`#f5f7fa` → `#c3cfe2` (银色渐变)
-- **虚拟化层**：`#3498db` (蓝色)
+- **架构色彩**：
+  - RISC-V: `#667eea` (蓝紫色)
+  - ARM64: `#e74c3c` (红色)
+  - x86_64: `#3498db` (蓝色)
+- **虚拟化层**：`#764ba2` (深紫色)
 - **文字**：`#ffffff` (白色)
 
 ### 尺寸建议
@@ -86,8 +111,12 @@ Ferrovisor 项目图标设计融合了以下核心概念：
 ├── logo.png          # 经典版本 (PNG)
 ├── logo-minimal.svg  # 简约版本 (SVG)
 ├── logo-minimal.png  # 简约版本 (PNG)
-├── logo-modern.svg   # 现代版本 (SVG) ⭐推荐
+├── logo-modern.svg   # 现代版本 (SVG)
 ├── logo-modern.png   # 现代版本 (PNG)
+├── logo-multiarch.svg # 多架构版本 (SVG) - 新增
+├── logo-multiarch.png # 多架构版本 (PNG) - 新增
+├── logo-universal.svg # 通用架构版本 (SVG) ⭐新推荐
+├── logo-universal.png # 通用架构版本 (PNG) ⭐新推荐
 ├── logo-favicon.svg  # 图标版本 (SVG)
 ├── favicon.png       # 图标版本 (PNG)
 └── LOGO.md          # 本文档
@@ -99,5 +128,5 @@ Ferrovisor 项目图标遵循项目的开源许可证 (Apache-2.0)。
 
 ---
 
-**Ferrovisor** - RISC-V Hypervisor Project
-*坚固的虚拟化，可靠的性能*
+**Ferrovisor** - Multi-Architecture Hypervisor Project
+*坚固的虚拟化，可靠的性能，跨平台的兼容性*
