@@ -2,6 +2,10 @@
 
 <div align="center">
 
+<p align="center">
+  <img src="logo-modern.svg" alt="Ferrovisor Logo" width="200" height="200">
+</p>
+
 <a href="README.zh-CN.md">
   <img src="https://img.shields.io/badge/Language-中文-red?style=for-the-badge" alt="中文版">
 </a>

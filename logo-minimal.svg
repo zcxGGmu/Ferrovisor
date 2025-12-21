@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Dark background -->
+  <rect width="200" height="200" fill="#1a1a1a"/>
+
+  <!-- Hypervisor stack visualization -->
+  <g transform="translate(50, 60)">
+    <!-- Metal gradient definition -->
+    <defs>
+      <linearGradient id="feGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#8e9aaf;stop-opacity:1" />
+      </linearGradient>
+
+      <linearGradient id="blueGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" style="stop-color:#4a90e2;stop-opacity:1" />
+        <stop offset="100%" style="stop-color:#2e5f8a;stop-opacity:1" />
+      </linearGradient>
+    </defs>
+
+    <!-- Three layers representing virtualization stack -->
+    <!-- Hardware layer -->
+    <rect x="0" y="0" width="100" height="20" fill="url(#feGradient)" opacity="0.9"/>
+
+    <!-- Hypervisor layer (blue) -->
+    <rect x="0" y="25" width="100" height="20" fill="url(#blueGrad)"/>
+
+    <!-- VM layer -->
+    <rect x="0" y="50" width="100" height="20" fill="url(#feGradient)" opacity="0.9"/>
+
+    <!-- Connection dots -->
+    <circle cx="15" cy="10" r="2" fill="#ffffff" opacity="0.8"/>
+    <circle cx="15" cy="35" r="2" fill="#ffffff" opacity="0.8"/>
+    <circle cx="15" cy="60" r="2" fill="#ffffff" opacity="0.8"/>
+    <line x1="15" y1="10" x2="15" y2="60" stroke="#ffffff" stroke-width="1" opacity="0.5"/>
+  </g>
+
+  <!-- Fe symbol prominently displayed -->
+  <text x="100" y="165" font-family="Arial, sans-serif" font-size="42" font-weight="bold" text-anchor="middle" fill="#ffffff">Fe</text>
+
+  <!-- Small "visor" text -->
+  <text x="100" y="182" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#8e9aaf">visor</text>
+</svg>

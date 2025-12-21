@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32" height="32" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="32" height="32" fill="#2c3e50" rx="4"/>
+
+  <!-- Compact layers representation -->
+  <!-- Hardware -->
+  <rect x="4" y="8" width="24" height="4" fill="#95a5a6"/>
+  <!-- Hypervisor -->
+  <rect x="4" y="14" width="24" height="4" fill="#3498db"/>
+  <!-- VM -->
+  <rect x="4" y="20" width="24" height="4" fill="#95a5a6"/>
+
+  <!-- Fe symbol -->
+  <text x="16" y="30" font-family="Arial, sans-serif" font-size="6" font-weight="bold" text-anchor="middle" fill="#ecf0f1">Fe</text>
+</svg>

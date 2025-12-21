@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="200" height="200" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <circle cx="100" cy="100" r="98" fill="#2c3e50" stroke="#34495e" stroke-width="2"/>
+
+  <!-- Iron representation - metallic layers -->
+  <defs>
+    <linearGradient id="metalGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#e8eaf0;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#b8bcc8;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7f8c8d;stop-opacity:1" />
+    </linearGradient>
+
+    <linearGradient id="blueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3498db;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#2980b9;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+  <!-- Hypervisor layers (3 layers representing virtualization) -->
+  <!-- Layer 1 - Hardware -->
+  <rect x="30" y="70" width="140" height="25" rx="3" fill="url(#metalGradient)" opacity="0.9"/>
+
+  <!-- Layer 2 - Hypervisor -->
+  <rect x="40" y="90" width="120" height="25" rx="3" fill="#3498db" opacity="0.9"/>
+
+  <!-- Layer 3 - Virtual Machines -->
+  <rect x="50" y="110" width="100" height="25" rx="3" fill="url(#metalGradient)" opacity="0.9"/>
+
+  <!-- Fe symbol for Iron -->
+  <text x="100" y="160" font-family="Arial, sans-serif" font-size="32" font-weight="bold" text-anchor="middle" fill="url(#metalGradient)">Fe</text>
+
+  <!-- Virtualization indicator - connection lines -->
+  <path d="M 60 85 L 60 95 L 60 105 M 140 85 L 140 95 L 140 105"
+        stroke="#ecf0f1" stroke-width="2" opacity="0.7"/>
+
+  <!-- Project name below -->
+  <text x="100" y="185" font-family="Arial, sans-serif" font-size="14" font-weight="600" text-anchor="middle" fill="#ecf0f1">Ferrovisor</text>
+</svg>
