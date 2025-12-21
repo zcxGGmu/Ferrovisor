@@ -2,11 +2,15 @@
 
 <div align="center">
 
+<p align="center">
+  <img src="assets/logos/logo-zh.svg" alt="Ferrovisor Logo" width="200" height="200">
+</p>
+
 <a href="README.md">
   <img src="https://img.shields.io/badge/Language-English-blue?style=for-the-badge" alt="English">
 </a>
 
-![Ferrovisor Logo](https://img.shields.io/badge/Ferrovisor-Rust--Based%20Hypervisor-blue?style=for-the-badge&logo=rust)
+![Ferrovisor Logo](https://img.shields.io/badge/Ferrovisor-多架构%20Hypervisor-blue?style=for-the-badge&logo=rust)
 ![License](https://img.shields.io/badge/License-GPL%20v2.0-green.svg?style=for-the-badge)
 ![Platform](https://img.shields.io/badge/Platform-RISC--V%20%7C%20ARM64%20%7C%20x86__64-orange?style=for-the-badge)
 ![Status](https://img.shields.io/badge/Status-Active%20Development-yellow?style=for-the-badge)
