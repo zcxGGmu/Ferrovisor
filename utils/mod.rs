@@ -97,7 +97,7 @@ pub fn get_timestamp() -> u64 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        use x86_64::instructions::rdtsc;
+        use x86_64::asm::rdtsc;
         unsafe { rdtsc() }
     }
 }

@@ -46,7 +46,7 @@ impl<T> SpinLock<T> {
         while !self.try_lock().is_some() {
             // Spin until we can acquire the lock
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::yield();
+            cortex_a::asm::r#yield();
 
             #[cfg(target_arch = "riscv64")]
             riscv::asm::pause();
@@ -122,7 +122,7 @@ impl RawSpinLock {
             Ordering::Relaxed,
         ).is_err() {
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::yield();
+            cortex_a::asm::r#yield();
 
             #[cfg(target_arch = "riscv64")]
             riscv::asm::pause();
@@ -178,7 +178,7 @@ impl TicketLock {
         let ticket = self.next_ticket.fetch_add(1, Ordering::Acquire);
         while self.serving.load(Ordering::Acquire) != ticket {
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::yield();
+            cortex_a::asm::r#yield();
 
             #[cfg(target_arch = "riscv64")]
             riscv::asm::pause();

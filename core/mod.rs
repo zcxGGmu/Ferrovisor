@@ -31,6 +31,12 @@ pub enum Error {
     InvalidState,
     /// Resource unavailable
     ResourceUnavailable,
+    /// Not implemented
+    NotImplemented,
+    /// Emulator error
+    EmulatorError(crate::emulator::EmulatorError),
+    /// Library error
+    LibError(crate::libs::LibError),
 }
 
 /// Initialize all core components

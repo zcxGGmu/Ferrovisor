@@ -525,7 +525,7 @@ impl ExceptionManager {
     /// Get exception descriptor
     pub fn get_exception(&self, num: u32) -> Option<ExceptionDescriptor> {
         let exceptions = self.exceptions.lock();
-        if num as usize < exceptions.len() {
+        if (num as usize) < exceptions.len() {
             exceptions[num as usize].clone()
         } else {
             None

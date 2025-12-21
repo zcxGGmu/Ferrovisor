@@ -9,6 +9,9 @@ pub mod mutex;
 pub mod spinlock;
 pub mod semaphore;
 
+// Re-export SpinLock for convenience
+pub use spinlock::SpinLock;
+
 /// Initialize synchronization subsystem
 pub fn init() -> Result<()> {
     // Initialize any global synchronization state

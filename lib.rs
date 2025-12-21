@@ -3,11 +3,51 @@
 #![feature(lang_items)]
 #![feature(panic_info_message)]
 #![feature(alloc_error_handler)]
+#![feature(allocator_api)]
+
+extern crate alloc;
 
 //! Ferrovisor - A Rust-based Type-1 Hypervisor
 //!
 //! This is the main library for the Ferrovisor hypervisor, providing
 //! virtualization capabilities for ARM64, RISC-V, and x86_64 architectures.
+
+// Import allocator components
+use core::alloc::{GlobalAlloc, Layout};
+
+// Global allocator using our unified allocator
+struct FerrovisorAllocator;
+
+unsafe impl GlobalAlloc for FerrovisorAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        match crate::core::mm::allocator::allocate_with_config(
+            layout.size(),
+            crate::core::mm::allocator::AllocationConfig {
+                strategy: crate::core::mm::allocator::AllocationStrategy::Auto,
+                alignment: layout.align(),
+                zero: false,
+                reclaimable: true,
+                tag: "global_alloc",
+            }
+        ) {
+            Ok(ptr) => ptr.as_ptr(),
+            Err(_) => core::ptr::null_mut(),
+        }
+    }
+
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        if let Some(ptr) = core::ptr::NonNull::new(ptr) {
+            let _ = crate::core::mm::allocator::deallocate(
+                ptr,
+                layout.size(),
+                crate::core::mm::allocator::AllocationStrategy::Auto
+            );
+        }
+    }
+}
+
+#[global_allocator]
+static ALLOCATOR: FerrovisorAllocator = FerrovisorAllocator;
 
 // Core modules
 #[macro_use]
@@ -135,6 +175,42 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     arch::x86_64::panic(info)
+}
+
+// Fallback panic handler for when architecture-specific ones aren't available
+#[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "x86_64")))]
+#[panic_handler]
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    #[cfg(feature = "debug")]
+    {
+        // Try to output panic info via UART if available
+        if let Some(location) = info.location() {
+            let _ = write!(
+                core::fmt::Formatter::new(),
+                "Panic at {}:{}: {}",
+                location.file(),
+                location.line(),
+                info.message().unwrap_or(&"No message")
+            );
+        } else {
+            let _ = write!(
+                core::fmt::Formatter::new(),
+                "Panic: {}",
+                info.message().unwrap_or(&"No message")
+            );
+        }
+    }
+
+    loop {
+        #[cfg(target_arch = "aarch64")]
+        cortex_a::asm::wfe();
+
+        #[cfg(target_arch = "riscv64")]
+        riscv::asm::wfi();
+
+        #[cfg(target_arch = "x86_64")]
+        x86_64::instructions::hlt();
+    }
 }
 
 // Language items

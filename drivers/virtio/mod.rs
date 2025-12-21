@@ -267,7 +267,7 @@ impl VirtQueue {
             )
         };
 
-        if idx % self.size as usize < ring.len() {
+        if (idx % (self.size as usize)) < ring.len() {
             ring[idx % self.size as usize] = desc_index;
         }
 
@@ -496,7 +496,7 @@ impl VirtioDevice {
     /// Get queue
     pub fn get_queue(&self, index: u16) -> Option<&VirtQueue> {
         let queues = self.queues.lock();
-        if index as usize < queues.len() {
+        if (index as usize) < queues.len() {
             queues[index as usize].as_ref()
         } else {
             None
