@@ -77,17 +77,85 @@ pub struct DeviceTreeParser {
     fdt: FlattenedDeviceTree,
     /// Parser configuration
     config: ParserConfig,
+    /// Cached node references for fast lookup
+    node_cache: core::cell::RefCell<core::collections::HashMap<String, *const Node>>,
+    /// Address translation cache
+    addr_cache: core::cell::RefCell<core::collections::HashMap<String, AddrTranslation>>,
+    /// Interrupt mapping cache
+    int_cache: core::cell::RefCell<core::collections::HashMap<String, IntMapping>>,
+}
+
+/// Address translation information
+#[derive(Debug, Clone)]
+pub struct AddrTranslation {
+    /// Bus address
+    pub bus_addr: u64,
+    /// Parent bus address
+    pub parent_addr: u64,
+    /// Size
+    pub size: u64,
+    /// Translation flags
+    pub flags: u32,
+}
+
+/// Interrupt mapping information
+#[derive(Debug, Clone)]
+pub struct IntMapping {
+    /// Interrupt specifier
+    pub interrupt: u32,
+    /// Interrupt type
+    pub int_type: u32,
+    /// Parent controller phandle
+    pub parent_phandle: Option<u32>,
+    /// Parent controller node path
+    pub parent_path: Option<String>,
 }
 
 impl DeviceTreeParser {
     /// Create new parser from FDT
     pub fn new(fdt: FlattenedDeviceTree, config: ParserConfig) -> Self {
-        Self { fdt, config }
+        let mut parser = Self {
+            fdt,
+            config,
+            node_cache: core::cell::RefCell::new(core::collections::HashMap::new()),
+            addr_cache: core::cell::RefCell::new(core::collections::HashMap::new()),
+            int_cache: core::cell::RefCell::new(core::collections::HashMap::new()),
+        };
+
+        // Initialize caches
+        parser.build_caches();
+        parser
     }
 
     /// Create parser with default config
     pub fn new_default(fdt: FlattenedDeviceTree) -> Self {
         Self::new(fdt, ParserConfig::default())
+    }
+
+    /// Build caches for fast lookup
+    fn build_caches(&mut self) {
+        if let Some(root) = self.get_root() {
+            self.build_node_cache_recursive(root, "");
+        }
+    }
+
+    /// Build node cache recursively
+    fn build_node_cache_recursive(&self, node: &Node, path: &str) {
+        let current_path = if path.is_empty() {
+            "/".to_string()
+        } else if path == "/" {
+            format!("/{}", node.name)
+        } else {
+            format!("{}/{}", path, node.name)
+        };
+
+        // Add to cache
+        self.node_cache.borrow_mut().insert(current_path.clone(), node as *const Node);
+
+        // Recursively process children
+        for child in &node.children {
+            self.build_node_cache_recursive(child, &current_path);
+        }
     }
 
     /// Get root node
@@ -380,9 +448,410 @@ impl DeviceTreeParser {
 
     /// Get parent node path
     fn get_parent_path(&self, node: &Node) -> Option<String> {
-        // This would require maintaining parent references
-        // For now, return None
+        if node.depth == 0 {
+            return None;
+        }
+
+        // Get parent from cached references
+        let full_path = node.get_full_path();
+        if let Some(pos) = full_path.rfind('/') {
+            if pos > 0 {
+                Some(full_path[..pos].to_string())
+            } else {
+                Some("/".to_string())
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Translate bus address to CPU address
+    pub fn translate_address(&self, node_path: &str, bus_addr: u64, size: u64) -> Result<u64, &'static str> {
+        let cache_key = format!("{}:{:#x}:{:#x}", node_path, bus_addr, size);
+
+        // Check cache first
+        if let Some(translation) = self.addr_cache.borrow().get(&cache_key) {
+            return Ok(translation.parent_addr + (bus_addr - translation.bus_addr));
+        }
+
+        // Walk up the tree to find address translation
+        let mut current_path = node_path.to_string();
+        let mut translated_addr = bus_addr;
+
+        while !current_path.is_empty() && current_path != "/" {
+            if let Some(parent_path) = self.get_parent_path_by_path(&current_path) {
+                if let Some(parent_node) = self.find_node(&parent_path) {
+                    if let Some(child_node) = self.find_node(&current_path) {
+                        let ranges = self.parse_ranges(parent_node);
+
+                        for range in &ranges {
+                            if bus_addr >= range.bus_address &&
+                               bus_addr < range.bus_address + range.size {
+                                // Found matching range
+                                let offset = bus_addr - range.bus_address;
+                                translated_addr = range.cpu_address + offset;
+
+                                // Cache the translation
+                                let translation = AddrTranslation {
+                                    bus_addr,
+                                    parent_addr: range.cpu_address,
+                                    size,
+                                    flags: 0,
+                                };
+                                self.addr_cache.borrow_mut().insert(cache_key, translation);
+
+                                return Ok(translated_addr);
+                            }
+                        }
+                    }
+                }
+                current_path = parent_path;
+            } else {
+                break;
+            }
+        }
+
+        // No translation needed or found
+        Ok(translated_addr)
+    }
+
+    /// Get parent path by node path
+    fn get_parent_path_by_path(&self, node_path: &str) -> Option<String> {
+        if node_path.is_empty() || node_path == "/" {
+            return None;
+        }
+
+        if let Some(pos) = node_path.rfind('/') {
+            if pos > 0 {
+                Some(node_path[..pos].to_string())
+            } else {
+                Some("/".to_string())
+            }
+        } else {
+            Some("/")
+        }
+    }
+
+    /// Find interrupt controller for a node
+    pub fn find_interrupt_controller(&self, node_path: &str) -> Option<(String, u32)> {
+        if let Some(node) = self.find_node(node_path) {
+            // Check for direct interrupt-parent
+            if let Some(parent_prop) = node.get_property("interrupt-parent") {
+                if let Some(phandle) = parent_prop.as_u32() {
+                    if let Some(controller_path) = self.find_node_by_phandle(phandle) {
+                        return Some((controller_path, self.get_interrupt_cells(node)));
+                    }
+                }
+            }
+
+            // Walk up tree to find interrupt controller
+            let mut current_path = node_path.to_string();
+            while !current_path.is_empty() && current_path != "/" {
+                if let Some(parent_path) = self.get_parent_path_by_path(&current_path) {
+                    if let Some(parent_node) = self.find_node(&parent_path) {
+                        if parent_node.get_property("interrupt-controller").is_some() {
+                            return Some((parent_path, self.get_interrupt_cells(node)));
+                        }
+                    }
+                    current_path = parent_path;
+                } else {
+                    break;
+                }
+            }
+        }
+
         None
+    }
+
+    /// Find node by phandle
+    pub fn find_node_by_phandle(&self, phandle: u32) -> Option<String> {
+        for node_path in self.node_cache.borrow().keys() {
+            if let Some(node) = self.find_node(node_path) {
+                if let Some(node_phandle) = node.get_prop_u32("phandle") {
+                    if node_phandle == phandle {
+                        return Some(node_path.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Parse interrupt-map property
+    pub fn parse_interrupt_map(&self, node_path: &str) -> Vec<((u32, u32), (String, u32))> {
+        let Some(node) = self.find_node(node_path) else {
+            return Vec::new();
+        };
+
+        let Some(prop) = node.get_property("interrupt-map") else {
+            return Vec::new();
+        };
+
+        let Some(interrupt_map_mask) = node.get_property("interrupt-map-mask") else {
+            return Vec::new();
+        };
+
+        // Parse the interrupt-map and interrupt-map-mask properties
+        // This is a simplified implementation - real parsing would be more complex
+        let mut mappings = Vec::new();
+
+        // For now, return empty - this would need full implementation
+        mappings
+    }
+
+    /// Validate FDT structure
+    pub fn validate(&self) -> Result<(), Vec<String>> {
+        let mut errors = Vec::new();
+
+        // Check root node
+        if self.get_root().is_none() {
+            errors.push("No root node found".to_string());
+        }
+
+        // Check required nodes
+        if self.find_node("/cpus").is_none() {
+            errors.push("No /cpus node found".to_string());
+        }
+
+        if self.find_node("/memory").is_none() {
+            errors.push("No /memory node found".to_string());
+        }
+
+        // Validate CPU nodes
+        if let Some(cpus_node) = self.find_node("/cpus") {
+            for child in &cpus_node.children {
+                if child.name.starts_with("cpu@") {
+                    if child.get_property("compatible").is_none() {
+                        errors.push(format!("CPU node {} missing compatible property", child.name));
+                    }
+                    if child.get_property("reg").is_none() {
+                        errors.push(format!("CPU node {} missing reg property", child.name));
+                    }
+                }
+            }
+        }
+
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+
+    /// Create virtual device tree for VM
+    pub fn create_vm_fdt(&self, vm_config: &VmDeviceTreeConfig) -> Result<FlattenedDeviceTree, &'static str> {
+        // Create a copy of the FDT
+        let mut vm_fdt = self.fdt.clone();
+
+        // Modify for VM
+        if let Some(root) = vm_fdt.get_root_mut() {
+            // Remove or modify hardware-specific nodes
+            self.vmify_hardware_nodes(root, vm_config);
+
+            // Add VM-specific nodes
+            self.add_vm_specific_nodes(root, vm_config);
+
+            // Update memory node
+            self.update_memory_node(root, vm_config);
+
+            // Update CPU node
+            self.update_cpu_node(root, vm_config);
+        }
+
+        // Serialize back to bytes
+        let vm_fdt_bytes = vm_fdt.serialize()
+            .map_err(|_| "Failed to serialize VM FDT")?;
+
+        // Create new FDT from bytes
+        FlattenedDeviceTree::from_bytes(vm_fdt_bytes)
+    }
+
+    /// Modify hardware nodes for VM
+    fn vmify_hardware_nodes(&self, root: &mut Node, vm_config: &VmDeviceTreeConfig) {
+        // Disable direct hardware access
+        let nodes_to_disable = [
+            "/pci",
+            "/soc/ethernet",
+            "/soc/serial",
+            "/soc/i2c",
+            "/soc/spi",
+        ];
+
+        for node_path in &nodes_to_disable {
+            if let Some(node) = root.find_path_mut(node_path) {
+                // Add status = "disabled" property
+                let disabled_prop = Property::new("status", b"disabled\0");
+                node.add_property(disabled_prop);
+            }
+        }
+    }
+
+    /// Add VM-specific nodes
+    fn add_vm_specific_nodes(&self, root: &mut Node, vm_config: &VmDeviceTreeConfig) {
+        // Add virtio nodes
+        if vm_config.enable_virtio {
+            self.add_virtio_node(root, "virtio_mmio", vm_config);
+            self.add_virtio_console_node(root);
+            if vm_config.virtio_blk_count > 0 {
+                self.add_virtio_block_nodes(root, vm_config.virtio_blk_count);
+            }
+            if vm_config.virtio_net_count > 0 {
+                self.add_virtio_net_nodes(root, vm_config.virtio_net_count);
+            }
+        }
+
+        // Add hypervisor node
+        self.add_hypervisor_node(root);
+    }
+
+    /// Add virtio MMIO node
+    fn add_virtio_node(&self, root: &mut Node, name: &str, vm_config: &VmDeviceTreeConfig) {
+        let mut virtio_node = Node::new(name, 1);
+
+        // Add compatible property
+        let compatible_prop = Property::new("compatible", b"virtio,mmio\0");
+        virtio_node.add_property(compatible_prop);
+
+        // Add reg property
+        let reg_data = 0x10000000u64.to_be_bytes().to_vec(); // Example address
+        let reg_size = 0x1000u64.to_be_bytes().to_vec(); // Example size
+        let mut reg_prop_data = Vec::new();
+        reg_prop_data.extend_from_slice(&reg_data);
+        reg_prop_data.extend_from_slice(&reg_size);
+        let reg_prop = Property::new("reg", reg_prop_data);
+        virtio_node.add_property(reg_prop);
+
+        // Add interrupts property
+        let interrupt_data = 1u32.to_be_bytes().to_vec();
+        let interrupt_prop = Property::new("interrupts", interrupt_data);
+        virtio_node.add_property(interrupt_prop);
+
+        // Add status = "okay"
+        let status_prop = Property::new("status", b"okay\0");
+        virtio_node.add_property(status_prop);
+
+        root.add_child(virtio_node);
+    }
+
+    /// Add virtio console node
+    fn add_virtio_console_node(&self, root: &mut Node) {
+        let mut console_node = Node::new("virtio_console", 1);
+
+        let compatible_prop = Property::new("compatible", b"virtio,mmio\0");
+        console_node.add_property(compatible_prop);
+
+        let reg_data = 0x10001000u64.to_be_bytes().to_vec();
+        let reg_size = 0x1000u64.to_be_bytes().to_vec();
+        let mut reg_prop_data = Vec::new();
+        reg_prop_data.extend_from_slice(&reg_data);
+        reg_prop_data.extend_from_slice(&reg_size);
+        let reg_prop = Property::new("reg", reg_prop_data);
+        console_node.add_property(reg_prop);
+
+        root.add_child(console_node);
+    }
+
+    /// Add virtio block nodes
+    fn add_virtio_block_nodes(&self, root: &mut Node, count: u32) {
+        for i in 0..count {
+            let mut block_node = Node::new(&format!("virtio_block{}", i), 1);
+
+            let compatible_prop = Property::new("compatible", b"virtio,mmio\0");
+            block_node.add_property(compatible_prop);
+
+            let base_addr = 0x10002000 + (i as u64 * 0x1000);
+            let reg_data = base_addr.to_be_bytes().to_vec();
+            let reg_size = 0x1000u64.to_be_bytes().to_vec();
+            let mut reg_prop_data = Vec::new();
+            reg_prop_data.extend_from_slice(&reg_data);
+            reg_prop_data.extend_from_slice(&reg_size);
+            let reg_prop = Property::new("reg", reg_prop_data);
+            block_node.add_property(reg_prop);
+
+            root.add_child(block_node);
+        }
+    }
+
+    /// Add virtio network nodes
+    fn add_virtio_net_nodes(&self, root: &mut Node, count: u32) {
+        for i in 0..count {
+            let mut net_node = Node::new(&format!("virtio_net{}", i), 1);
+
+            let compatible_prop = Property::new("compatible", b"virtio,mmio\0");
+            net_node.add_property(compatible_prop);
+
+            let base_addr = 0x10004000 + (i as u64 * 0x1000);
+            let reg_data = base_addr.to_be_bytes().to_vec();
+            let reg_size = 0x1000u64.to_be_bytes().to_vec();
+            let mut reg_prop_data = Vec::new();
+            reg_prop_data.extend_from_slice(&reg_data);
+            reg_prop_data.extend_from_slice(&reg_size);
+            let reg_prop = Property::new("reg", reg_prop_data);
+            net_node.add_property(reg_prop);
+
+            root.add_child(net_node);
+        }
+    }
+
+    /// Add hypervisor node
+    fn add_hypervisor_node(&self, root: &mut Node) {
+        let mut hv_node = Node::new("hypervisor", 1);
+
+        let compatible_prop = Property::new("compatible", b"ferrovisor,hypervisor\0");
+        hv_node.add_property(compatible_prop);
+
+        let version_prop = Property::new("version", b"1.0\0");
+        hv_node.add_property(version_prop);
+
+        root.add_child(hv_node);
+    }
+
+    /// Update memory node for VM
+    fn update_memory_node(&self, root: &mut Node, vm_config: &VmDeviceTreeConfig) {
+        if let Some(mem_node) = root.find_child_mut("memory") {
+            // Remove existing reg property
+            mem_node.properties.retain(|p| p.name != "reg");
+
+            // Add new reg property for VM memory
+            let addr_data = vm_config.memory_base.to_be_bytes().to_vec();
+            let size_data = vm_config.memory_size.to_be_bytes().to_vec();
+            let mut reg_data = Vec::new();
+            reg_data.extend_from_slice(&addr_data);
+            reg_data.extend_from_slice(&size_data);
+            let reg_prop = Property::new("reg", reg_data);
+            mem_node.add_property(reg_prop);
+        }
+    }
+
+    /// Update CPU node for VM
+    fn update_cpu_node(&self, root: &mut Node, vm_config: &VmDeviceTreeConfig) {
+        if let Some(cpus_node) = root.find_child_mut("cpus") {
+            // Remove all existing CPU nodes
+            cpus_node.children.clear();
+
+            // Add VM's CPUs
+            for i in 0..vm_config.vcpu_count {
+                let mut cpu_node = Node::new(&format!("cpu@{}", i), 2);
+
+                let compatible_prop = Property::new("compatible", b"riscv,cpu\0");
+                cpu_node.add_property(compatible_prop);
+
+                let reg_prop = Property::new("reg", (i as u64).to_be_bytes().to_vec());
+                cpu_node.add_property(reg_prop);
+
+                let status_prop = Property::new("status", b"okay\0");
+                cpu_node.add_property(status_prop);
+
+                cpus_node.add_child(cpu_node);
+            }
+
+            // Update #address-cells and #size-cells for cpus node
+            let addr_cells_prop = Property::new("#address-cells", 1u32.to_be_bytes().to_vec());
+            cpus_node.add_property(addr_cells_prop);
+
+            let size_cells_prop = Property::new("#size-cells", 0u32.to_be_bytes().to_vec());
+            cpus_node.add_property(size_cells_prop);
+        }
     }
 
     /// Parse status property
@@ -496,6 +965,42 @@ impl DeviceTreeParser {
     /// Iterate over all properties
     pub fn iter_properties(&self) -> PropertyIterator {
         PropertyIterator::new(self.get_root()?)
+    }
+}
+
+/// VM device tree configuration
+#[derive(Debug, Clone)]
+pub struct VmDeviceTreeConfig {
+    /// Number of virtual CPUs
+    pub vcpu_count: u32,
+    /// Memory base address
+    pub memory_base: u64,
+    /// Memory size
+    pub memory_size: u64,
+    /// Enable VirtIO devices
+    pub enable_virtio: bool,
+    /// Number of VirtIO block devices
+    pub virtio_blk_count: u32,
+    /// Number of VirtIO network devices
+    pub virtio_net_count: u32,
+    /// Enable virtual console
+    pub enable_console: bool,
+    /// Hypervisor features
+    pub hypervisor_features: u32,
+}
+
+impl Default for VmDeviceTreeConfig {
+    fn default() -> Self {
+        Self {
+            vcpu_count: 1,
+            memory_base: 0x80000000,
+            memory_size: 0x40000000, // 1GB
+            enable_virtio: true,
+            virtio_blk_count: 1,
+            virtio_net_count: 0,
+            enable_console: true,
+            hypervisor_features: 0xFFFFFFFF, // All features enabled
+        }
     }
 }
 

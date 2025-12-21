@@ -6,7 +6,8 @@
 //! - FDT modification
 //! - Device tree memory management
 
-use crate::arch::riscv64::*;
+use crate::core::mm::PhysAddr;
+use crate::utils::address::VirtAddr;
 use core::slice;
 use core::str;
 
@@ -229,7 +230,7 @@ impl Property {
 }
 
 /// Device tree node
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Node {
     /// Node name
     pub name: String,
@@ -237,11 +238,22 @@ pub struct Node {
     pub properties: Vec<Property>,
     /// Child nodes
     pub children: Vec<Node>,
-    /// Parent node (None for root)
-    pub parent: Option<usize>,
+    /// Parent node reference (None for root)
+    pub parent: Option<*mut Node>,
+    /// Reference count for lifecycle management
+    pub ref_count: core::sync::atomic::AtomicU32,
     /// Node depth
     pub depth: u32,
+    /// Node path cache
+    pub full_path: Option<String>,
+    /// System-specific data
+    pub system_data: Option<*mut core::ffi::c_void>,
+    /// Private data for extensions
+    pub private_data: Option<*mut core::ffi::c_void>,
 }
+
+unsafe impl Send for Node {}
+unsafe impl Sync for Node {}
 
 impl Node {
     /// Create a new node
@@ -251,8 +263,27 @@ impl Node {
             properties: Vec::new(),
             children: Vec::new(),
             parent: None,
+            ref_count: core::sync::atomic::AtomicU32::new(1),
             depth,
+            full_path: None,
+            system_data: None,
+            private_data: None,
         }
+    }
+
+    /// Increment reference count
+    pub fn ref_inc(&self) {
+        self.ref_count.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Decrement reference count
+    pub fn ref_dec(&self) -> u32 {
+        self.ref_count.fetch_sub(1, core::sync::atomic::Ordering::SeqCst) - 1
+    }
+
+    /// Get reference count
+    pub fn ref_count(&self) -> u32 {
+        self.ref_count.load(core::sync::atomic::Ordering::SeqCst)
     }
 
     /// Add a property
@@ -261,10 +292,21 @@ impl Node {
     }
 
     /// Add a child node
-    pub fn add_child(&mut self, child: Node) -> usize {
-        let index = self.children.len();
+    pub fn add_child(&mut self, mut child: Node) -> *mut Node {
+        child.parent = Some(self as *mut Node);
+        let child_ptr = self.children.as_mut_ptr().add(self.children.len());
         self.children.push(child);
-        index
+        child_ptr
+    }
+
+    /// Get child node by name (returning raw pointer)
+    pub fn find_child_ptr(&mut self, name: &str) -> Option<*mut Node> {
+        for child in &mut self.children {
+            if child.name == name {
+                return Some(child as *mut Node);
+            }
+        }
+        None
     }
 
     /// Get property by name
@@ -299,7 +341,7 @@ impl Node {
 
     /// Find descendant node by path
     pub fn find_path(&self, path: &str) -> Option<&Node> {
-        if path.is_empty() {
+        if path.is_empty() || path == "/" {
             return Some(self);
         }
 
@@ -319,14 +361,85 @@ impl Node {
         Some(current)
     }
 
-    /// Get full path of this node
-    pub fn get_full_path(&self) -> String {
-        if self.depth == 0 {
-            return "/".to_string();
+    /// Find descendant node by path (mutable)
+    pub fn find_path_mut(&mut self, path: &str) -> Option<&mut Node> {
+        if path.is_empty() || path == "/" {
+            return Some(self);
         }
 
-        // This would need parent reference to build full path
-        self.name.clone()
+        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        if parts.is_empty() {
+            return Some(self);
+        }
+
+        let mut current = self;
+        for part in parts {
+            match current.find_child_mut(part) {
+                Some(node) => current = node,
+                None => return None,
+            }
+        }
+
+        Some(current)
+    }
+
+    /// Find child node by name (mutable)
+    pub fn find_child_mut(&mut self, name: &str) -> Option<&mut Node> {
+        self.children.iter_mut().find(|n| n.name == name)
+    }
+
+    /// Get full path of this node (cached)
+    pub fn get_full_path(&self) -> String {
+        if let Some(ref cached) = self.full_path {
+            return cached.clone();
+        }
+
+        if self.depth == 0 {
+            "/".to_string()
+        } else {
+            // Build path from parent
+            let mut path = String::new();
+            if let Some(parent) = self.parent {
+                unsafe {
+                    path = (*parent).get_full_path();
+                    if path != "/" {
+                        path.push('/');
+                    }
+                }
+                path.push_str(&self.name);
+                path
+            } else {
+                "/".to_string()
+            }
+        }
+    }
+
+    /// Set system-specific data
+    pub fn set_system_data(&mut self, data: *mut core::ffi::c_void) {
+        self.system_data = Some(data);
+    }
+
+    /// Get system-specific data
+    pub fn get_system_data(&self) -> Option<*mut core::ffi::c_void> {
+        self.system_data
+    }
+
+    /// Set private data
+    pub fn set_private_data(&mut self, data: *mut core::ffi::c_void) {
+        self.private_data = Some(data);
+    }
+
+    /// Get private data
+    pub fn get_private_data(&self) -> Option<*mut core::ffi::c_void> {
+        self.private_data
+    }
+
+    /// Invalidate path cache (used when tree structure changes)
+    pub fn invalidate_path_cache(&mut self) {
+        self.full_path = None;
+        for child in &mut self.children {
+            child.invalidate_path_cache();
+        }
     }
 }
 
@@ -346,6 +459,42 @@ pub struct FlattenedDeviceTree {
 impl FlattenedDeviceTree {
     /// Create FDT from raw data
     pub fn from_bytes(data: Vec<u8>) -> Result<Self, &'static str> {
+        Self::from_bytes_internal(data)
+    }
+
+    /// Create FDT from memory address
+    pub fn from_memory(addr: usize) -> Result<Self, &'static str> {
+        // Validate address
+        if addr == 0 {
+            return Err("Invalid FDT address: null pointer");
+        }
+
+        // Read header first to get size
+        let header = unsafe {
+            *(addr as *const FdtHeader)
+        };
+
+        if !header.is_valid() {
+            return Err("Invalid FDT header");
+        }
+
+        let total_size = header.totalsize as usize;
+
+        // Validate total size is reasonable
+        if total_size > 0x100000 { // 1MB max size
+            return Err("FDT too large");
+        }
+
+        // Read FDT data from memory
+        let data = unsafe {
+            core::slice::from_raw_parts(addr as *const u8, total_size).to_vec()
+        };
+
+        Self::from_bytes_internal(data)
+    }
+
+    /// Internal implementation for creating FDT from bytes
+    fn from_bytes_internal(data: Vec<u8>) -> Result<Self, &'static str> {
         if data.len() < core::mem::size_of::<FdtHeader>() {
             return Err("Invalid FDT: too small");
         }
@@ -407,12 +556,10 @@ impl FlattenedDeviceTree {
 
         let mut current_offset = struct_offset;
         let mut node_stack: Vec<Node> = Vec::new();
-        let mut parent_stack: Vec<usize> = Vec::new();
 
         // Create root node
         let root = Node::new("", 0);
         self.root = Some(root);
-        node_stack.push(self.root.as_mut().unwrap());
 
         while current_offset < struct_end {
             // Read token
@@ -431,19 +578,12 @@ impl FlattenedDeviceTree {
                     let (name, name_len) = self.read_string_at(current_offset)?;
                     current_offset = align_up(current_offset + name_len + 1, 4);
 
-                    let depth = parent_stack.len() as u32;
+                    let depth = node_stack.len() as u32;
                     let mut node = Node::new(name, depth);
-
-                    if let Some(parent) = node_stack.last_mut() {
-                        let child_index = parent.add_child(node);
-                        node.parent = Some(child_index);
-                        node_stack.push(parent.children.get_mut(child_index).unwrap());
-                        parent_stack.push(child_index);
-                    }
+                    node_stack.push(node);
                 }
                 Some(FdtToken::EndNode) => {
                     node_stack.pop();
-                    parent_stack.pop();
                 }
                 Some(FdtToken::Prop) => {
                     // Read property
