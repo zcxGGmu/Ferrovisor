@@ -20,12 +20,20 @@ pub mod attrs;
 /// Address translation (IPA -> PA)
 pub mod translate;
 
+/// G-stage (Stage-2) context management
+pub mod gstage;
+
+/// Stage-2 fault handling
+pub mod fault;
+
 // Re-export commonly used types
 pub use stage2::{PageTableEntry, PageTable, PageTableLevel, pte, block_sizes, index, level_index};
 pub use operations::{MapFlags, map_range, unmap_range, tlb_flush_ipa, tlb_flush_all, pte_sync};
 pub use vtcr::{VtcrConfig, read_vtcr_el2, write_vtcr_el2, init_default_48bit};
 pub use attrs::{MemoryType, Shareability, MemoryAttr, MairConfig, read_mair_el2, write_mair_el2};
-pub use translate::{translate_ipa, TranslationResult, TranslationFault, TranslationError, walk_debug};
+pub use translate::{translate_ipa, TranslationResult as TranslateResult, TranslationFault as TranslateFault, TranslationError, walk_debug};
+pub use gstage::{GStageMode, GStageCapabilities, GStageContext, GStageManager, Ipa, Hpa, Vmid};
+pub use fault::{Stage2Fault, FaultInfo, handle_stage2_fault};
 
 /// Initialize MMU
 pub fn init() -> Result<(), &'static str> {
