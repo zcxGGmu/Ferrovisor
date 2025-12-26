@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.0 (ARM32 CP15 协处理器仿真已完成) |
+| **版本** | v3.1 (ARM32 CP14 协处理器仿真已完成) |
 | **状态** | 实施阶段 4 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1378,20 +1378,64 @@ pub enum Cp15Register {
 - 新增文件: 4 个
 - 总代码量: ~1,300 行
 
-**Commit:** (待提交)
+**Commit:** 70fde6b
 
 #### 3.4.4 CP14 协处理器仿真 (ARMv7)
 
+> **状态更新 (2025-12-27):** ✅ 已完成
+
 **任务：**
-- [ ] 实现 CP14 调试协处理器 (`arch/arm32/cpu/coproc/cp14.rs`)
-  - ThumbEE 寄存器
-  - 调试寄存器 (部分)
+- [x] 实现 CP14 调试协处理器 (`arch/arm32/cpu/coproc/cp14.rs`, ~350 行)
+  - ThumbEE 寄存器 (TEECR, TEEHBR)
+  - 调试寄存器 (返回 Unimplemented)
+  - Trace 寄存器 (返回 Unimplemented)
+  - Jazelle 寄存器 (返回 Unimplemented)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm32ve/cpu_vcpu_cp14.c` (218 行)
 
+**CP14 寄存器类型:**
+```rust
+pub enum Cp14RegType {
+    ThumbEE = 6,  // ThumbEE registers (TEECR, TEEHBR)
+    Debug = 0,    // Debug registers - not implemented
+    Trace = 1,    // Trace registers - not implemented
+    Jazelle = 7,  // Jazelle registers - not implemented
+}
+```
+
+**主要结构：**
+- `Cp14Regs`: CP14 寄存器状态集合
+- `Cp14ThumbEERegs`: ThumbEE 寄存器 (TEECR, TEEHBR)
+- `Cp14RegType`: CP14 寄存器类型枚举
+- `ARM_FEATURE_THUMB2EE`: ThumbEE 特性标志位
+- `ArmFeatureExt`: ARM 特性扩展 trait
+
+**关键功能：**
+- `read()` / `write()`: CP14 寄存器读写分发
+- `read_thumbee_reg()` / `write_thumbee_reg()`: ThumbEE 寄存器 (opc1=6)
+- Debug/Trace/Jazelle 寄存器返回 Unimplemented
+- ThumbEE 特性启用/禁用控制
+- `save()` / `restore()`: VCPU 上下文切换支持
+- `dump()`: 调试信息输出
+
+**ThumbEE 寄存器:**
+- TEECR (CRn=0, CRm=0, opc2=0): ThumbEE 控制寄存器
+  - bit[0]: U - Unaligned access enable
+  - bit[4:1]: CP - Copy-to-Background enable
+- TEEHBR (CRn=1, CRm=0, opc2=0): ThumbEE Handler 基址寄存器
+  - bit[31:2]: ThumbEE 异常处理程序基址
+
 **交付物：**
-- `arch/arm32/cpu/coproc/cp14.rs`
+- [x] `arch/arm32/cpu/coproc/cp14.rs` (~350 行)
+- [x] `arch/arm32/cpu/coproc/mod.rs` (更新导出)
+
+**代码统计：**
+- 新增文件: 1 个
+- 修改文件: 1 个
+- 总代码量: ~350 行
+
+**Commit:** (待提交)
 
 ---
 

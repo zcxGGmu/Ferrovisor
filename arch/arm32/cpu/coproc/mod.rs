@@ -4,6 +4,7 @@
 //! It implements CP14 (debug coprocessor) and CP15 (system control coprocessor).
 
 pub mod cp15;
+pub mod cp14;
 
 // Re-export commonly used types
 pub use cp15::{
@@ -11,6 +12,8 @@ pub use cp15::{
     Cp15IdRegs, Cp15CtrlRegs, Cp15MmuRegs, Cp15FaultRegs,
     Cp15TranslateRegs, Cp15PerfRegs, Cp15AttrRegs, Cp15TlsRegs,
 };
+
+pub use cp14::{Cp14Regs, Cp14ThumbEERegs, Cp14RegType, ARM_FEATURE_THUMB2EE, ArmFeatureExt};
 
 /// Initialize coprocessor emulation
 pub fn init() -> Result<(), &'static str> {
