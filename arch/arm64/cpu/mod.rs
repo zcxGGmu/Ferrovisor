@@ -15,6 +15,9 @@ pub mod init;
 /// System register emulation module
 pub mod sysreg;
 
+/// VCPU context switching module
+pub mod vcpu;
+
 pub use regs::*;
 pub use features::*;
 pub use state::*;
