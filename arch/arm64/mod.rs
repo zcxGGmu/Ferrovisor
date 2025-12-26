@@ -31,6 +31,7 @@ pub mod smp;
 pub mod platform;
 pub mod psci;
 pub mod timer;
+pub mod devtree;
 
 // Re-export key types and functions
 pub use cpu::*;
@@ -40,6 +41,7 @@ pub use smp::*;
 pub use platform::*;
 pub use psci::*;
 pub use timer::*;
+pub use devtree::*;
 
 /// ARM64 architecture version
 pub const ARCH_VERSION: &str = "arm64";

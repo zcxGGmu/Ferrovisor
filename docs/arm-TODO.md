@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.6 (Timer 虚拟化已完成) |
-| **状态** | 实施阶段 8 |
+| **版本** | v3.7 (设备树支持已完成) |
+| **状态** | 实施阶段 9 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -1895,15 +1895,15 @@ pub const CNTFRQ_EL0: u32;     // Counter Frequency Register
 
 ### 阶段 9：设备树和平台支持 (Week 27-28)
 
-#### 3.9.1 ARM 设备树适配
+#### 3.9.1 ARM 设备树适配 (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 ARM 设备树解析 (`arch/arm64/devtree/parse.rs`)
+- [x] 实现 ARM 设备树解析 (`arch/arm64/devtree/parse.rs`)
   - CPU 节点解析 (enable-method, cpu-release-addr)
   - GIC 节点解析 (interrupt-controller)
   - Timer 节点解析 (arm,armv8-timer)
   - CPUS 节点解析
-- [ ] 实现虚拟设备树生成 (`arch/arm64/devtree/vm_fdt.rs`)
+- [x] 实现虚拟设备树生成 (`arch/arm64/devtree/vm_fdt.rs`)
   - 为 VM 生成 ARM 设备树
   - GIC virt 设备节点
   - Generic Timer 节点
@@ -1913,27 +1913,79 @@ pub const CNTFRQ_EL0: u32;     // Counter Frequency Register
 - `xvisor/arch/arm/dts/arm/` - ARM 设备树源文件
 - `xvisor/build/arm64/*.dts` - 预编译设备树
 
-**设备树节点示例:**
-```dts
-gic: interrupt-controller@... {
-    compatible = "arm,gic-v3";
-    reg = <...>;
-    interrupts = <...>;
-    interrupt-controller;
-    #interrupt-cells = <3>;
-};
+**实现细节:**
 
-timer {
-    compatible = "arm,armv8-timer";
-    interrupts = <...>;
-    clock-frequency = <...>;
-};
-```
+**arch/arm64/devtree/mod.rs** (~280 行)
+- ARM 设备树兼容字符串常量 (GIC_V1/V2/V3/V4, ARM_TIMER, PL011_UART)
+- ARM 设备树属性名称常量
+- CpuEnableMethod 枚举 (SpinTable, Psci, Arm, Unknown)
+- CpuInfo 结构体: CPU 信息 (cpu_id, mpidr, enable_method, release_addr, capacity)
+- GicInfo 结构体: GIC 信息 (version, regs, interrupts)
+- TimerInfo 结构体: Timer 信息 (interrupts, clock_frequency)
+- MemInfo 结构体: 内存信息 (base, size)
+- init() - 初始化设备树支持
 
-**交付物：**
-- `arch/arm64/devtree/mod.rs`
-- `arch/arm64/devtree/parse.rs`
-- `arch/arm64/devtree/vm_fdt.rs`
+**arch/arm64/devtree/parse.rs** (~550 行)
+- HardwareInfo 结构体: 完整硬件信息 (cpus, gic, timer, memory, psci_available)
+- parse_device_tree() - 解析设备树并提取硬件信息
+- parse_cpu_nodes() - 解析 CPU 节点 (/cpus/cpu@N)
+  - parse_cpu_node() - 解析单个 CPU 节点
+  - 读取 reg (MPIDR), enable-method, cpu-release-addr, capacity-dmips-mhz
+- parse_gic_node() - 解析 GIC 节点
+  - parse_gic_from_node() - 解析 GIC 信息
+  - 读取 compatible, reg, interrupts, #interrupt-cells
+- parse_timer_node() - 解析 Timer 节点
+  - parse_timer_from_node() - 解析 Timer 信息
+  - 读取 interrupts (SEC_PPI, NS_PPI, VIRT_PPI, HYP_PPI)
+  - 读取 clock-frequency (或使用 CNTFRQ_EL0)
+- parse_memory_nodes() - 解析内存节点
+  - parse_memory_node() - 解析单个内存节点
+  - 读取 reg (base + size)
+- parse_psci_node() - 解析 PSCI 节点
+- parse_reg_property() - 解析 reg 属性 (address/size pairs)
+- parse_interrupt() - 解析中断描述符
+  - InterruptType 枚举 (Sgi, Ppi, Spi)
+  - InterruptFlags 结构体 (edge_triggered, level_sensitive, high_level, etc.)
+
+**arch/arm64/devtree/vm_fdt.rs** (~490 行)
+- VmFdtConfig 结构体: VM 设备树配置
+  - num_vcpus, mem_base, mem_size
+  - gic_version, gic_base, gic_redist_base
+  - bootargs, virtio_enabled, num_virtio, uart_base
+  - Builder pattern 方法: gic_version(), gic_addrs(), bootargs(), virtio(), uart()
+- generate_vm_fdt() - 生成完整虚拟设备树
+- create_cpus_node() - 创建 /cpus 节点
+  - 生成 cpu@N 节点 (每个 VCPU)
+  - 设置 MPIDR, enable-method (psci), interrupts (PPI 14)
+  - 创建 cpu-map/topology
+- create_memory_node() - 创建 /memory 节点
+  - 设置 reg (base + size)
+- create_gic_node() - 创建 GIC 节点
+  - GICv3: Distributor (64KB) + Redistributor (2MB per CPU)
+  - GICv2: Distributor + CPU interface
+  - 设置 compatible, interrupt-controller, #interrupt-cells
+- create_timer_node() - 创建 Timer 节点
+  - 设置 interrupts (SEC_PPI 13, NS_PPI 14, VIRT_PPI 11, HYP_PPI 10)
+  - 设置 always-on 属性
+- create_chosen_node() - 创建 /chosen 节点
+  - 设置 bootargs
+- create_uart_node() - 创建 PL011 UART 节点
+  - 设置 reg, interrupts (PPI 1)
+- create_virtio_node() - 创建 VirtIO MMIO 设备节点
+  - 设置 reg, interrupts (SPI from 32)
+- create_psci_node() - 创建 PSCI 节点
+  - 设置 compatible (arm,psci-1.0), method (smc)
+  - 设置 PSCI function IDs (cpu_suspend, cpu_off, cpu_on, migrate)
+- serialize_fdt() - 序列化设备树到 FDT 格式 (待完善)
+- calculate_fdt_size() - 计算 FDT 大小
+
+**代码统计:**
+- 新增文件: 3 个
+- 总代码量: ~1,320 行
+
+**Commit:** (待提交)
+
+---
 
 #### 3.9.2 平台支持
 
