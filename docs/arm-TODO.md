@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.7 (设备树支持已完成) |
+| **版本** | v3.8 (平台支持已完成) |
 | **状态** | 实施阶段 9 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1987,14 +1987,14 @@ pub const CNTFRQ_EL0: u32;     // Counter Frequency Register
 
 ---
 
-#### 3.9.2 平台支持
+#### 3.9.2 平台支持 (已完成 2025-12-27)
 
 **任务：**
-- [ ] QEMU virt 平台 (`arch/arm64/platform/qemu_virt.rs`)
+- [x] QEMU virt 平台 (`arch/arm64/platform/qemu_virt.rs`)
   - 内存布局
   - 中断映射
   - UART 配置
-- [ ] Foundation v8 模型 (`arch/arm64/platform/foundation_v8.rs`)
+- [x] Foundation v8 模型 (`arch/arm64/platform/foundation_v8.rs`)
 - [ ] Raspberry Pi 4 (`arch/arm64/platform/rpi4.rs`) (可选)
 - [ ] Rockchip RK3399 (`arch/arm64/platform/rk3399.rs`) (可选)
 
@@ -2003,10 +2003,66 @@ pub const CNTFRQ_EL0: u32;     // Counter Frequency Register
 - `xvisor/build/arm64/raspi4.dts`
 - `xvisor/build/arm64/rk3399.dts`
 
-**交付物：**
-- `arch/arm64/platform/mod.rs`
-- `arch/arm64/platform/qemu_virt.rs`
-- `arch/arm64/platform/foundation_v8.rs`
+**实现细节:**
+
+**arch/arm64/platform/mod.rs** (~95 行)
+- Platform trait: 平台通用接口
+  - name(), compatible() - 平台标识
+  - memory_layout() - 内存布局
+  - gic_base(), gic_version() - GIC 配置
+  - uart_base() - UART 地址
+  - early_init(), final_init() - 初始化函数
+- detect_platform() - 从设备树检测平台
+- init() - 初始化平台支持
+- get_platform() - 获取当前平台
+
+**arch/arm64/platform/qemu_virt.rs** (~335 行)
+- QEMU virt 内存布局常量
+  - QEMU_VIRT_MEM_BASE/SIZE: 0x40000000, 256MB
+  - QEMU_VIRT_GIC_DIST_BASE: 0x08000000
+  - QEMU_VIRT_GIC_REDIST_BASE: 0x080A0000
+  - QEMU_VIRT_UART_BASE: 0x09000000
+  - QEMU_VIRT_VIRTIO_BASE: 0x0A000000 (32 devices, 4KB each)
+  - QEMU_VIRT_PCIE_MMIO_BASE: 0x40000000 (128MB)
+  - QEMU_VIRT_PCIE_ECAM_BASE: 0x40100000 (32MB)
+- mem_map 模块: 向后兼容的内存映射
+- QemuVirtPlatform 结构体
+  - memory: [(base, size), ...]
+  - gic_version, gic_base, gic_redist_base
+  - uart_base, virtio_base, virtio_count
+  - virtio_addr(index), virtio_irq(index) - VirtIO 设备查询
+  - is_qemu_virt() - 检测是否运行在 QEMU virt
+- irq 模块: 中断映射常量
+  - UART_IRQ, RTC_IRQ, VIRTIO_IRQ_BASE, PCIE_IRQ_BASE
+- utils 模块: 工具函数
+  - init_uart(), get_memory_size(), get_cpu_count()
+
+**arch/arm64/platform/foundation_v8.rs** (~285 行)
+- Foundation v8 内存布局常量
+  - FOUNDATION_V8_MEM_BASE/SIZE: 0x80000000, 2GB
+  - FOUNDATION_V8_GIC_DIST_BASE: 0x2F000000
+  - FOUNDATION_V8_GIC_REDIST_BASE: 0x2F100000
+  - FOUNDATION_V8_UART0_BASE: 0x1C090000
+  - FOUNDATION_V8_UART1_BASE: 0x1C0B0000
+  - FOUNDATION_V8_CLCD_BASE: 0x1C0F0000
+  - FOUNDATION_V8_RTC_BASE: 0x1C1F0000
+- mem_map 模块: 向后兼容的内存映射
+- FoundationV8Platform 结构体
+  - memory: [(base, size), ...]
+  - gic_version, gic_base, gic_redist_base
+  - uart0_base, uart1_base, clcd_base
+  - is_foundation_v8() - 检测是否运行在 Foundation v8
+- irq 模块: 中断映射常量
+  - UART0_IRQ, UART1_IRQ, CLCD_IRQ, RTC_IRQ
+- utils 模块: 工具函数
+  - init_uart(), get_memory_size(), get_cpu_count()
+  - init_clcd() - 初始化 CLCD 显示
+
+**代码统计:**
+- 新增/修改文件: 3 个
+- 总代码量: ~715 行
+
+**Commit:** (待提交)
 
 ---
 
