@@ -1204,6 +1204,6 @@ pub fn invalidate_tlb_asid(asid: u16) {
     #[cfg(target_arch = "x86_64")]
     {
         // x86_64 doesn't have ASID in hardware
-        x86_64::instructions::tlb::flush_all();
+        unsafe { core::arch::asm!("invlpg [rax]", in("rax") 0_usize) };
     }
 }

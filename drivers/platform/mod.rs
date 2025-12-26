@@ -8,6 +8,7 @@ use crate::drivers::{DeviceType, DeviceOps, DeviceInfo, DeviceStatus};
 use crate::core::mm::VirtAddr;
 use crate::core::sync::SpinLock;
 use crate::arch::common::MmioAccess;
+use alloc::format;
 
 pub mod uart;
 pub mod timer;

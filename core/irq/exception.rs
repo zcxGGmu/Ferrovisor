@@ -4,9 +4,22 @@
 //! including exception types, handlers, and context management.
 
 use crate::{Result, Error};
-use crate::core::irq::{IrqNumber, IrqHandler};
+use crate::core::irq::IrqNumber;
 use crate::core::sync::SpinLock;
 use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Inter-processor interrupt types
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IpiType {
+    /// Reschedule IPI - trigger scheduler run
+    Reschedule,
+    /// Stop CPU IPI - halt the target CPU
+    Stop,
+    /// Function call IPI - execute function on target CPU
+    FunctionCall,
+    /// TLB flush IPI - flush TLB on target CPU
+    TlbFlush,
+}
 
 /// Exception types
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -384,30 +397,30 @@ impl ExceptionManager {
             }
             ExceptionAction::SkipInstruction => {
                 // This would be implemented in assembly
-                crate::info!("Skipping faulting instruction at {:#x}", ctx.pc);
+                // crate::info!("Skipping faulting instruction at {:#x}", ctx.pc);
                 Ok(())
             }
             ExceptionAction::Terminate => {
-                crate::warn!("Terminating due to exception");
+                // crate::warn!("Terminating due to exception");
                 // Terminate current thread
-                crate::panic!("Thread terminated due to exception");
+                panic!("Thread terminated due to exception");
             }
             ExceptionAction::Panic => {
-                crate::error!("Panicking due to critical exception");
-                crate::panic!("Critical exception occurred");
+                // crate::error!("Panicking due to critical exception");
+                panic!("Critical exception occurred");
             }
             ExceptionAction::InjectGuest => {
-                crate::info!("Injecting exception into guest VM {}", ctx.virt_info.vm_id);
+                // crate::info!("Injecting exception into guest VM {}", ctx.virt_info.vm_id);
                 // This would inject the exception into the guest VM
                 Ok(())
             }
             ExceptionAction::Emulate => {
-                crate::info!("Emulating faulting instruction at {:#x}", ctx.pc);
+                // crate::info!("Emulating faulting instruction at {:#x}", ctx.pc);
                 // This would trigger instruction emulation
                 Ok(())
             }
             ExceptionAction::Retry => {
-                crate::info!("Retrying faulting operation");
+                // crate::info!("Retrying faulting operation");
                 // This would retry the faulting operation
                 Ok(())
             }

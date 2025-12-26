@@ -61,13 +61,13 @@ pub fn run() -> ! {
 
         // Yield CPU
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::wfe();
+        unsafe { core::arch::asm!("wfe") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::wfi();
+        unsafe { core::arch::asm!("wfi") };
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::hlt();
+        unsafe { core::arch::asm!("hlt") };
     }
 }
 

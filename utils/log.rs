@@ -57,12 +57,14 @@ pub fn set_level(level: Level) {
 /// Log a message
 pub fn log(level: Level, args: fmt::Arguments<'_>) {
     if level <= level() {
-        let timestamp = crate::utils::get_timestamp();
+        let _timestamp = crate::utils::get_timestamp();
 
+        // TODO: Implement console output
         // Format: [TIMESTAMP] [LEVEL] message
-        console::print!("[{:016x}] [{}] ", timestamp, level.as_str());
-        console::print_fmt(args);
-        console::print!("\n");
+        // console::print!("[{:016x}] [{}] ", timestamp, level.as_str());
+        // console::print_fmt(args);
+        // console::print!("\n");
+        let _ = args; // Suppress unused warning
     }
 }
 

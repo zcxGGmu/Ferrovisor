@@ -41,39 +41,39 @@ macro_rules! is_aligned {
 #[inline]
 pub fn rmb() {
     #[cfg(target_arch = "aarch64")]
-    cortex_a::asm::dmb(cortex_a::asm::SY);
+    unsafe { core::arch::asm!("dmb sy") };
 
     #[cfg(target_arch = "riscv64")]
-    riscv::asm::fence(riscv::asm::Ordering::RLR, riscv::asm::Ordering::RLR);
+    unsafe { core::arch::asm!("fence r, r") };
 
     #[cfg(target_arch = "x86_64")]
-    x86_64::instructions::lfence();
+    unsafe { core::arch::asm!("lfence") };
 }
 
 /// Write memory barrier
 #[inline]
 pub fn wmb() {
     #[cfg(target_arch = "aarch64")]
-    cortex_a::asm::dmb(cortex_a::asm::ST);
+    unsafe { core::arch::asm!("dmb st") };
 
     #[cfg(target_arch = "riscv64")]
-    riscv::asm::fence(riscv::asm::Ordering::LRW, riscv::asm::Ordering::LRW);
+    unsafe { core::arch::asm!("fence w, w") };
 
     #[cfg(target_arch = "x86_64")]
-    x86_64::instructions::sfence();
+    unsafe { core::arch::asm!("sfence") };
 }
 
 /// Full memory barrier
 #[inline]
 pub fn mb() {
     #[cfg(target_arch = "aarch64")]
-    cortex_a::asm::dmb(cortex_a::asm::SY);
+    unsafe { core::arch::asm!("dmb sy") };
 
     #[cfg(target_arch = "riscv64")]
-    riscv::asm::fence(riscv::asm::Ordering::RAW, riscv::asm::Ordering::RAW);
+    unsafe { core::arch::asm!("fence rw, rw") };
 
     #[cfg(target_arch = "x86_64")]
-    x86_64::instructions::mfence();
+    unsafe { core::arch::asm!("mfence") };
 }
 
 /// Get a timestamp counter
@@ -99,8 +99,15 @@ pub fn get_timestamp() -> u64 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        use x86_64::asm::rdtsc;
-        unsafe { rdtsc() }
+        unsafe {
+            let mut rax: u64;
+            core::arch::asm!(
+                "rdtsc",
+                out("rax") rax,
+                options(nomem, nostack)
+            );
+            rax
+        }
     }
 }
 
@@ -109,12 +116,12 @@ pub fn get_timestamp() -> u64 {
 pub fn spin(iterations: u32) {
     for _ in 0..iterations {
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::nop();
+        unsafe { core::arch::asm!("nop") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::nop();
+        unsafe { core::arch::asm!("nop") };
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::nop();
+        unsafe { core::arch::asm!("nop") };
     }
 }

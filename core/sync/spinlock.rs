@@ -46,13 +46,13 @@ impl<T> SpinLock<T> {
         while !self.try_lock().is_some() {
             // Spin until we can acquire the lock
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::r#yield();
+            unsafe { core::arch::asm!("yield") };
 
             #[cfg(target_arch = "riscv64")]
-            riscv::asm::pause();
+            unsafe { core::arch::asm!("pause") };
 
             #[cfg(target_arch = "x86_64")]
-            x86_64::instructions::pause();
+            unsafe { core::arch::asm!("pause") };
         }
 
         // The try_lock() call succeeded, so we can unwrap
@@ -122,13 +122,13 @@ impl RawSpinLock {
             Ordering::Relaxed,
         ).is_err() {
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::r#yield();
+            unsafe { core::arch::asm!("yield") };
 
             #[cfg(target_arch = "riscv64")]
-            riscv::asm::pause();
+            unsafe { core::arch::asm!("pause") };
 
             #[cfg(target_arch = "x86_64")]
-            x86_64::instructions::pause();
+            unsafe { core::arch::asm!("pause") };
         }
     }
 
@@ -178,13 +178,13 @@ impl TicketLock {
         let ticket = self.next_ticket.fetch_add(1, Ordering::Acquire);
         while self.serving.load(Ordering::Acquire) != ticket {
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::r#yield();
+            unsafe { core::arch::asm!("yield") };
 
             #[cfg(target_arch = "riscv64")]
-            riscv::asm::pause();
+            unsafe { core::arch::asm!("pause") };
 
             #[cfg(target_arch = "x86_64")]
-            x86_64::instructions::pause();
+            unsafe { core::arch::asm!("pause") };
         }
         TicketLockGuard { lock: self }
     }

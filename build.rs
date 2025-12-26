@@ -60,15 +60,17 @@ fn configure_architecture(target: &str) {
     println!("cargo:rustc-link-arg=-Wl,--gc-sections");
 
     // Feature-based configuration
-    if cfg!(feature = "debug") {
-        println!("cargo:rustc-cfg(debug)");
+    // Note: cfg! macro doesn't work in build scripts for features
+    // Use CARGO_FEATURE_ environment variables instead
+    if env::var("CARGO_FEATURE_DEBUG").is_ok() {
+        println!("cargo:rustc-cfg=debug");
     }
 
-    if cfg!(feature = "verbose") {
-        println!("cargo:rustc-cfg(verbose)");
+    if env::var("CARGO_FEATURE_VERBOSE").is_ok() {
+        println!("cargo:rustc-cfg=verbose");
     }
 
-    if cfg!(feature = "allocator") {
+    if env::var("CARGO_FEATURE_ALLOCATOR").is_ok() {
         println!("cargo:rustc-cfg=feature_allocator");
     }
 }

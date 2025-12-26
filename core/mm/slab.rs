@@ -450,7 +450,7 @@ impl SlabAllocator {
             let config = SlabCacheConfig {
                 object_size: size,
                 alignment: 8,
-                name: boxleak::format!("slab_{}", size),
+                name: alloc::format!("slab_{}", size),
                 initial_pages: 1,
             };
 

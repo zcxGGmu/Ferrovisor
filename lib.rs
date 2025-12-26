@@ -5,9 +5,12 @@
 
 #![no_std]
 #![no_main]
-#![feature(lang_items)]
+#![feature(lang_args)]
+#![feature(offset_of)]
 
 extern crate alloc;
+use ::core::ptr;
+use ::core::ptr::NonNull;
 
 // Re-export alloc types globally
 pub use alloc::vec::Vec;
@@ -34,12 +37,12 @@ unsafe impl GlobalAlloc for FerrovisorAllocator {
             }
         ) {
             Ok(ptr) => ptr.as_ptr(),
-            Err(_) => core::ptr::null_mut(),
+            Err(_) => ptr::null_mut(),
         }
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        if let Some(ptr) = core::ptr::NonNull::new(ptr) {
+        if let Some(ptr) = NonNull::new(ptr) {
             let _ = crate::core::mm::allocator::deallocate(
                 ptr,
                 layout.size(),
@@ -96,14 +99,14 @@ pub fn init() -> Result<(), Error> {
     // Initialize emulators
     emulator::init()?;
 
-    log::info!("Ferrovisor v{} initialized successfully", VERSION);
+    // log::info!("Ferrovisor v{} initialized successfully", VERSION);
 
     Ok(())
 }
 
 /// Main hypervisor loop
 pub fn run() -> ! {
-    log::info!("Starting Ferrovisor main loop");
+    // log::info!("Starting Ferrovisor main loop");
 
     // Architecture-specific main loop
     arch::run()
@@ -165,7 +168,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 #[cfg(target_arch = "aarch64")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    arch::aarch64::panic(info)
+    arch::arm64::panic(info)
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -184,45 +187,14 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 #[cfg(not(any(target_arch = "aarch64", target_arch = "riscv64", target_arch = "x86_64")))]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
-    #[cfg(feature = "debug")]
-    {
-        // Try to output panic info via UART if available
-        if let Some(location) = info.location() {
-            let _ = write!(
-                core::fmt::Formatter::new(),
-                "Panic at {}:{}: {}",
-                location.file(),
-                location.line(),
-                info.message().unwrap_or(&"No message")
-            );
-        } else {
-            let _ = write!(
-                core::fmt::Formatter::new(),
-                "Panic: {}",
-                info.message().unwrap_or(&"No message")
-            );
-        }
-    }
-
-    loop {
-        #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::wfe();
-
-        #[cfg(target_arch = "riscv64")]
-        riscv::asm::wfi();
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            unsafe { core::arch::asm!("hlt"); }
-        }
-    }
+    loop {}
 }
 
 // Language items
 #[cfg(target_arch = "aarch64")]
 #[lang = "eh_personality"]
 extern "C" fn eh_personality() {
-    arch::aarch64::eh_personality()
+    arch::arm64::eh_personality()
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -237,8 +209,8 @@ extern "C" fn eh_personality() {
     arch::x86_64::eh_personality()
 }
 
-// Alloc error handler
-#[alloc_error_handler]
-fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
-    panic!("allocation error: {:?}", layout)
-}
+// Alloc error handler - commented out for now, requires feature flag
+// #[alloc_error_handler]
+// fn alloc_error_handler(layout: alloc::alloc::Layout) -> ! {
+//     panic!("allocation error: {:?}", layout)
+// }

@@ -5,10 +5,11 @@
 
 use crate::{Result, Error};
 use crate::drivers::{DeviceType, DeviceOps, DeviceInfo, DeviceStatus};
-use crate::core::mm::{PhysAddr, VirtAddr, PageFrameAllocator};
+use crate::core::mm::{PhysAddr, VirtAddr};
 use crate::core::sync::SpinLock;
 use crate::arch::common::MmioAccess;
 use core::sync::atomic::{AtomicU16, AtomicU32, Ordering};
+use alloc::format;
 
 pub mod net;
 pub mod block;

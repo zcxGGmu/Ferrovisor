@@ -390,7 +390,7 @@ pub fn flush_tlb_all() {
 
     #[cfg(target_arch = "x86_64")]
     {
-        x86_64::instructions::tlb::flush_all();
+        unsafe { core::arch::asm!("invlpg [rax]", in("rax") 0_usize) };
     }
 }
 
@@ -429,7 +429,7 @@ pub fn flush_tlb_addr(addr: VirtAddr) {
 
     #[cfg(target_arch = "x86_64")]
     {
-        x86_64::instructions::tlb::flush(addr);
+        unsafe { core::arch::asm!("invlpg [rax]", in("rax") addr) };
     }
 }
 
@@ -438,36 +438,36 @@ pub mod barrier {
     /// Ensure all memory reads/writes are complete
     pub fn memory() {
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::dmb(cortex_a::asm::SY);
+        unsafe { core::arch::asm!("dmb sy") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::fence(riscv::asm::Ordering::SeqCst, riscv::asm::Ordering::SeqCst);
+        unsafe { core::arch::asm!("fence rw, rw") };
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::mfence();
+        unsafe { core::arch::asm!("mfence") };
     }
 
     /// Ensure all memory writes are complete
     pub fn write() {
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::dsb(cortex_a::asm::ST);
+        unsafe { core::arch::asm!("dsb st") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::fence(riscv::asm::Ordering::Release, riscv::asm::Ordering::Relaxed);
+        unsafe { core::arch::asm!("fence w, w") };
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::sfence();
+        unsafe { core::arch::asm!("sfence") };
     }
 
     /// Ensure all memory reads are complete
     pub fn read() {
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::dsb(cortex_a::asm::LD);
+        unsafe { core::arch::asm!("dsb ld") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::fence(riscv::asm::Ordering::Relaxed, riscv::asm::Ordering::Acquire);
+        unsafe { core::arch::asm!("fence r, r") };
 
         #[cfg(target_arch = "x86_64")]
-        x86_64::instructions::lfence();
+        unsafe { core::arch::asm!("lfence") };
     }
 }

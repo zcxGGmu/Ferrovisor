@@ -4,6 +4,9 @@
 //! including VM configurations and runtime settings.
 
 use crate::{Error, Result};
+use alloc::collections::BTreeMap;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// VM configuration structure
 #[derive(Debug, Clone)]
@@ -38,7 +41,7 @@ pub struct DeviceConfig {
     /// IRQ number
     pub irq: Option<u32>,
     /// Device-specific parameters
-    pub params: std::collections::HashMap<String, String>,
+    pub params: BTreeMap<String, String>,
 }
 
 /// Device types

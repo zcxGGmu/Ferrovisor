@@ -14,8 +14,8 @@ use ferrovisor::{init, run, Error};
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     // Disable interrupts early
-    cortex_a::asm::dsb(cortex_a::asm::SY);
-    cortex_a::asm::isb(cortex_a::asm::SY);
+    unsafe { core::arch::asm!("dsb sy") };
+    unsafe { core::arch::asm!("isb sy") };
 
     // Initialize early console
     if cfg!(feature = "debug") {
@@ -112,17 +112,12 @@ fn early_panic(msg: &str) -> ! {
     // Halt the system
     loop {
         #[cfg(target_arch = "aarch64")]
-        cortex_a::asm::wfe();
+        unsafe { core::arch::asm!("wfe") };
 
         #[cfg(target_arch = "riscv64")]
-        riscv::asm::wfi();
+        unsafe { core::arch::asm!("wfi") };
 
         #[cfg(target_arch = "x86_64")]
-        {
-            // Simple halt for x86_64
-            unsafe {
-                core::arch::asm!("hlt");
-            }
-        }
+        unsafe { core::arch::asm!("hlt") };
     }
 }

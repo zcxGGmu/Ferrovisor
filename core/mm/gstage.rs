@@ -1551,8 +1551,12 @@ pub fn translate_active_optimized(gpa: Gpa) -> Result<Hpa> {
 pub fn flush_all_tlbs() {
     if let Some(manager) = get() {
         // Use optimized flush for all VMs
+        #[cfg(target_arch = "riscv64")]
         crate::arch::riscv64::mmu::tlb::get_manager_mut()
             .map(|tlb_mgr| tlb_mgr.flush_all());
+
+        #[cfg(not(target_arch = "riscv64"))]
+        let _ = manager; // Suppress unused warning
     }
 }
 
@@ -1580,6 +1584,7 @@ pub fn translate_with_tlb_optimization(gpa: Gpa) -> Result<Hpa> {
 }
 
 /// Perform bulk translation with TLB preloading
+#[cfg(target_arch = "riscv64")]
 pub fn translate_bulk_with_preloading(gpas: &[Gpa]) -> Vec<Result<Hpa>> {
     let mut results = Vec::with_capacity(gpas.len());
 
@@ -1636,6 +1641,7 @@ pub fn translate_bulk_with_preloading(gpas: &[Gpa]) -> Vec<Result<Hpa>> {
 }
 
 /// Invalidate GPA range with TLB optimization
+#[cfg(target_arch = "riscv64")]
 pub fn invalidate_range_optimized(gpa: Gpa, size: u64) -> Result<()> {
     if let Some(manager) = get() {
         if let Some(vmid) = manager.get_active_vmid() {
@@ -1662,6 +1668,7 @@ pub fn invalidate_range_optimized(gpa: Gpa, size: u64) -> Result<()> {
 }
 
 /// Get TLB performance report for G-stage
+#[cfg(target_arch = "riscv64")]
 pub fn get_tlb_performance_report() -> Option<crate::arch::riscv64::mmu::tlb::TlbReport> {
     if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager() {
         let mut report = tlb_manager.generate_report();
@@ -1681,6 +1688,7 @@ pub fn get_tlb_performance_report() -> Option<crate::arch::riscv64::mmu::tlb::Tl
 }
 
 /// Perform periodic TLB maintenance for G-stage
+#[cfg(target_arch = "riscv64")]
 pub fn perform_tlb_maintenance() {
     if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
         tlb_manager.perform_maintenance();
@@ -1694,6 +1702,7 @@ pub fn perform_tlb_maintenance() {
 }
 
 /// Configure TLB optimization strategy for G-stage workloads
+#[cfg(target_arch = "riscv64")]
 pub fn configure_tlb_optimization() -> Result<()> {
     if let Some(tlb_manager) = crate::arch::riscv64::mmu::tlb::get_manager_mut() {
         // Configure adaptive strategy for virtualization workloads

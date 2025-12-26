@@ -68,13 +68,13 @@ impl Console for UartConsole {
         // Wait for UART to be ready
         while !self.is_transmit_ready() {
             #[cfg(target_arch = "aarch64")]
-            cortex_a::asm::nop();
+            unsafe { core::arch::asm!("nop") };
 
             #[cfg(target_arch = "riscv64")]
-            riscv::asm::nop();
+            unsafe { core::arch::asm!("nop") };
 
             #[cfg(target_arch = "x86_64")]
-            x86_64::instructions::nop();
+            unsafe { core::arch::asm!("nop") };
         }
 
         // Write character to UART data register

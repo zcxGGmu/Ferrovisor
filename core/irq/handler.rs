@@ -4,7 +4,7 @@
 //! for various types of interrupts and devices.
 
 use crate::{Result, Error};
-use crate::core::irq::{IrqNumber, IrqHandler, IrqDescriptor};
+use crate::core::irq::{IrqNumber, InterruptHandler, InterruptDescriptor};
 use crate::core::sync::SpinLock;
 use crate::core::sched::{self, ThreadId};
 use crate::core::vmm::{self, VmId, VcpuId};

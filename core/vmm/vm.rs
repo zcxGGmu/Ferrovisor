@@ -8,6 +8,8 @@ use crate::core::vmm::{VmId, VmState, VcpuId};
 use crate::core::mm::{VirtAddr, PhysAddr, AddressSpace, PAGE_SIZE, align_up};
 use crate::core::sync::SpinLock;
 use crate::utils::bitmap::Bitmap;
+use alloc::vec::Vec;
+use alloc::boxed::Box;
 use core::ptr::NonNull;
 
 /// Maximum number of VMs

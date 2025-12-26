@@ -7,6 +7,7 @@ use crate::{Result, Error};
 use crate::core::irq::{IrqNumber, Priority, IrqType, InterruptDescriptor};
 use crate::core::sync::SpinLock;
 use alloc::vec::Vec;
+use alloc::vec;
 use core::sync::atomic::{AtomicU64, AtomicU32, Ordering};
 
 /// Maximum number of CPUs supported

@@ -8,6 +8,7 @@ use crate::core::irq::{InterruptController, IrqNumber, Priority};
 use crate::core::mm::VirtAddr;
 use crate::core::sync::SpinLock;
 use alloc::vec::Vec;
+use alloc::vec;
 use alloc::boxed::Box;
 
 /// Simple volatile memory access helper

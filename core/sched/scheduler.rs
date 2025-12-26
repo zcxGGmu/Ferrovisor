@@ -8,10 +8,12 @@ use crate::core::sched::{Thread, ThreadId, Priority, ThreadState};
 use crate::core::vmm::{VmId, VcpuId};
 use crate::core::sync::SpinLock;
 use crate::utils::list::{List, ListNode};
-use crate::utils::list::impl_list_node;
 use crate::utils::bitmap::Bitmap;
 use core::ptr::NonNull;
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+// Import the impl_list_node macro from crate root
+use crate::impl_list_node;
 
 /// Maximum number of threads
 pub const MAX_THREADS: usize = 512;

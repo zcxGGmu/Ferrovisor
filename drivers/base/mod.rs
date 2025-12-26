@@ -9,6 +9,7 @@ use crate::drivers::{DeviceType, DeviceInfo, DeviceStatus, DeviceResource, Resou
 use crate::drivers::DeviceOps;
 use crate::core::mm::{PhysAddr, VirtAddr};
 use core::sync::atomic::{AtomicU64, AtomicU32, Ordering};
+use alloc::vec;
 
 pub mod console;
 pub mod serial;

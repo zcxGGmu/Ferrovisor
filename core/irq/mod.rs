@@ -21,6 +21,7 @@ pub use chip::{AplicStats, ImsicStats, create_aplic, create_imsic, init_nextgen_
 pub use msi::{MsiAddress, MsiController, MsiXController, MsiXVector, create_msi_controller, create_msix_controller};
 pub use affinity::{InterruptAffinityManager, CpuMask, CpuTopology, AffinityHints, LoadBalanceStrategy};
 pub use affinity::{CpuIrqStats, SystemIrqStats, init as init_affinity, get as get_affinity_manager};
+pub use exception::IpiType;
 
 /// Interrupt number type
 pub type IrqNumber = u32;
@@ -555,7 +556,7 @@ pub fn enable_interrupts() {
 
     #[cfg(target_arch = "x86_64")]
     {
-        x86_64::instructions::interrupts::enable();
+        unsafe { core::arch::asm!("sti") };
     }
 }
 
@@ -571,13 +572,13 @@ pub fn disable_interrupts() {
     #[cfg(target_arch = "riscv64")]
     {
         unsafe {
-            riscv::register::sie::clear(riscv::register::sie::SIE::SEIE);
+            core::arch::asm!("csrc sie, {}", in(reg) 1u64);
         }
     }
 
     #[cfg(target_arch = "x86_64")]
     {
-        x86_64::instructions::interrupts::disable();
+        unsafe { core::arch::asm!("cli") };
     }
 }
 
@@ -594,17 +595,25 @@ pub fn are_interrupts_enabled() -> bool {
 
     #[cfg(target_arch = "riscv64")]
     {
-        riscv::register::sie::read().seie()
+        let sie: u64;
+        unsafe {
+            core::arch::asm!("csrr {}, sie", out(reg) sie);
+        }
+        (sie & 1) != 0
     }
 
     #[cfg(target_arch = "x86_64")]
     {
-        x86_64::instructions::interrupts::are_enabled()
+        let rflags: u64;
+        unsafe {
+            core::arch::asm!("pushfq; pop {}", out(reg) rflags);
+        }
+        (rflags & (1 << 9)) != 0
     }
 }
 
 /// Send an IPI to a specific CPU
-pub fn send_ipi(cpu_id: usize, ipi_type: crate::core::irq::exception::IpiType) -> Result<()> {
+pub fn send_ipi(cpu_id: usize, ipi_type: IpiType) -> Result<()> {
     crate::debug!("Sending IPI {:?} to CPU {}", ipi_type, cpu_id);
 
     // TODO: Implement IPI sending
