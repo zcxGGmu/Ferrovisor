@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.2 (FPU/SIMD 虚拟化已完成) |
-| **状态** | 实施阶段 4 |
+| **版本** | v3.3 (PSCI 实现已完成) |
+| **状态** | 实施阶段 6 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -1526,10 +1526,10 @@ pub struct LazyFpuContext {
 
 ### 阶段 6：电源管理 (Week 21-22)
 
-#### 3.6.1 PSCI 实现
+#### 3.6.1 PSCI 实现 (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 PSCI v0.2/v1.0 接口 (`arch/arm64/psci/mod.rs`)
+- [x] 实现 PSCI v0.2/v1.0 接口 (`arch/arm64/psci/mod.rs`) (~470 行)
   - PSCI_VERSION
   - CPU_ON (启动 CPU)
   - CPU_OFF (关闭 CPU)
@@ -1538,11 +1538,11 @@ pub struct LazyFpuContext {
   - MIGRATE (迁移)
   - SYSTEM_OFF
   - SYSTEM_RESET
-- [ ] 实现 PSCI SMC 调用处理 (`arch/arm64/psci/smccc.rs`)
+- [x] 实现 PSCI SMC 调用处理 (`arch/arm64/psci/smccc.rs`) (~540 行)
   - SMC 调用约定
   - SMC64/SMC32 支持
   - 标准服务调用 (PSCI)
-- [ ] 实现 CPU 状态管理 (`arch/arm64/psci/cpu_state.rs`)
+- [x] 实现 CPU 状态管理 (`arch/arm64/psci/cpu_state.rs`) (~580 行)
   - CPU 在线/离线状态
   - CPU 挂起状态
   - 亲和级别状态
@@ -1575,6 +1575,40 @@ pub const PSCI_RET_ALREADY_ON: u32 = -4;
 - `arch/arm64/psci/mod.rs`
 - `arch/arm64/psci/smccc.rs`
 - `arch/arm64/psci/cpu_state.rs`
+
+**实现细节:**
+- `arch/arm64/psci/mod.rs` (~470 行)
+  - PSCI v0.2/v1.0 函数 ID 定义 (PSCI_0_2_FN_*)
+  - PSCI 返回值枚举 (PsciReturn)
+  - PsciContext 结构体 (版本、可用性)
+  - handle_call() - PSCI 调用处理
+  - handle_0_2_call() - PSCI v0.2/v1.0 调用处理
+  - 全局 PSCI 上下文管理 (init, context, handle_smc)
+- `arch/arm64/psci/smccc.rs` (~540 行)
+  - SMCCC 函数 ID 解码 (SmcccFunctionId)
+  - SMCCC 调用类型 (SmcccCallType, SmcccCallConv, SmcccService)
+  - SmcccRegs 结构体 (x0-x7 寄存器)
+  - SmcccResult 结构体 (返回值)
+  - SmcccClientId 结构体
+  - smc_call() / hvc_call() - 内联汇编实现
+- `arch/arm64/psci/cpu_state.rs` (~580 行)
+  - CpuPowerState 枚举 (ON, OFF, ON_PENDING)
+  - AffinityLevel 枚举 (Level0-Level3)
+  - CpuMpidr 结构体 (MPIDR 解码)
+  - CpuState 结构体 (CPU 状态跟踪)
+  - CpuStateManager (全局 CPU 状态管理器)
+  - cpu_on() - 启动 CPU
+  - cpu_off() - 关闭 CPU
+  - cpu_suspend() - 挂起 CPU
+  - affinity_info() - 查询 CPU 亲和性状态
+
+**代码统计:**
+- 新增文件: 3 个
+- 总代码量: ~1,590 行
+
+**Commit:** (待提交)
+
+---
 
 #### 3.6.2 WFI/WFE 处理
 

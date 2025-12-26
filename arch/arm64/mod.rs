@@ -29,6 +29,7 @@ pub mod mmu;
 pub mod interrupt;
 pub mod smp;
 pub mod platform;
+pub mod psci;
 
 // Re-export key types and functions
 pub use cpu::*;
@@ -36,6 +37,7 @@ pub use mmu::*;
 pub use interrupt::*;
 pub use smp::*;
 pub use platform::*;
+pub use psci::*;
 
 /// ARM64 architecture version
 pub const ARCH_VERSION: &str = "arm64";
