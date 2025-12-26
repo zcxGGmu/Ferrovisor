@@ -6,9 +6,52 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.0 (深度优化版) |
-| **状态** | 计划阶段 |
+| **版本** | v2.1 (进度追踪版) |
+| **状态** | 实施阶段 0 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
+
+## 进度追踪
+
+### 已完成 ✅
+
+#### 阶段 0.1: ARM64 CPU 抽象层接口和目录结构 (2025-12-27)
+- [x] 创建 `arch/arm64/` 目录结构
+- [x] `arch/arm64/mod.rs` - ARM64 架构主模块
+  - ExceptionLevel 枚举 (EL0-EL3)
+  - PStateFlags bitflags
+  - SystemRegEncoding 结构
+  - EL2 系统寄存器编码 (HCR_EL2, VTTBR_EL2, VTCR_EL2 等)
+- [x] `arch/arm64/cpu/` - CPU 管理模块
+  - `cpu/mod.rs` - CPU 管理函数
+  - `cpu/regs.rs` - 系统寄存器访问 (EL2, EL1, info)
+  - `cpu/features.rs` - CPU 特性检测 (CpuInfo, CpuFeatures)
+  - `cpu/state.rs` - VCPU 上下文结构
+  - `cpu/init.rs` - EL2 模式初始化
+- [x] `arch/arm64/mmu/` - Stage-2 MMU 模块
+  - `mmu/mod.rs`
+  - `mmu/stage2.rs` - 页表结构
+  - `mmu/vttbr.rs` - VMID 分配
+  - `mmu/vtcr.rs` - VTCR 配置
+  - `mmu/attrs.rs` - 内存属性
+- [x] `arch/arm64/interrupt/` - 中断处理模块
+  - `interrupt/mod.rs`
+  - `interrupt/gic.rs` - GIC 框架
+  - `interrupt/vgic.rs` - VGIC 状态
+  - `interrupt/virq.rs` - 虚拟中断
+- [x] `arch/arm64/smp/` - 多处理器支持
+  - `smp/mod.rs`
+  - `smp/psci.rs` - PSCI 接口
+  - `smp/spin_table.rs` - Spin Table 方法
+- [x] `arch/arm64/platform/` - 平台支持
+  - `platform/mod.rs`
+  - `platform/qemu_virt.rs` - QEMU virt 平台
+  - `platform/foundation_v8.rs` - ARM Foundation v8 模型
+
+**代码统计:**
+- 新增文件: 21 个
+- 总代码量: ~3,000 行
+
+**Commit:** c8ecd3a
 
 ---
 
@@ -500,15 +543,18 @@ struct vgic_vcpu_state {
 
 ### 阶段 1：CPU 基础支持 (Week 3-6)
 
+> **状态更新 (2025-12-27):** 部分任务已在阶段 0.1 中完成基础框架
+
 #### 3.1.1 ARMv8 EL2 模式初始化
 
 **任务：**
 - [ ] 实现 EL2 入口代码 (`arch/arm64/cpu/entry.S`)
-- [ ] 实现 CPU 初始化 (`arch/arm64/cpu/init.rs`)
-  - EL2 进入和配置
-  - HCR_EL2 寄存器初始化
-  - SCTLR_EL2 配置
-  - VTCR_EL2 配置
+- [x] 实现 CPU 初始化框架 (`arch/arm64/cpu/init.rs`)
+  - [x] EL2 进入和配置框架
+  - [x] HCR_EL2 寄存器位定义
+  - [x] SCTLR_EL2 位定义
+  - [x] VTCR_EL2 位定义
+  - [ ] 完整初始化流程 (TODO)
 - [ ] 实现异常向量表 (`arch/arm64/interrupt/vectors.S`)
   - 同步异常
   - IRQ 异常
@@ -530,9 +576,9 @@ struct vgic_vcpu_state {
 6. 配置 MMU
 
 **交付物：**
-- `arch/arm64/cpu/entry.S`
-- `arch/arm64/cpu/init.rs`
-- `arch/arm64/interrupt/vectors.S`
+- [x] `arch/arm64/cpu/init.rs` (部分完成)
+- [ ] `arch/arm64/cpu/entry.S`
+- [ ] `arch/arm64/interrupt/vectors.S`
 
 #### 3.1.2 ARMv7 HYP 模式初始化
 
@@ -555,24 +601,28 @@ struct vgic_vcpu_state {
 
 #### 3.1.3 CPU 寄存器管理
 
+> **状态更新 (2025-12-27):** 部分完成
+
 **任务：**
-- [ ] 实现系统寄存器访问接口 (`arch/arm64/cpu/regs.rs`)
-  - MSR/MRRS 指令封装 (inline asm)
-  - 通用寄存器 (x0-x30)
-  - 特殊寄存器 (SP, PC, PSTATE)
-- [ ] 实现 EL2 系统寄存器定义 (`arch/arm64/cpu/el2_regs.rs`)
-  - HCR_EL2, VTTBR_EL2, VTCR_EL2
-  - CPTR_EL2, HSTR_EL2
-  - SCR_EL3 (如果支持)
-- [ ] 实现 ID 寄存器解析 (`arch/arm64/cpu/id.rs`)
-  - MIDR_EL1, MPIDR_EL1
-  - ID_AA64PFR0_EL1 ~ ID_AA64MMFR2_EL1
-- [ ] 实现 CPU 特性检测 (`arch/arm64/cpu/features.rs`)
-  - ARMv8.0/8.1/8.2/8.3/8.4/8.5/8.6/9.0 版本检测
-  - 虚拟化扩展检测
-  - PAN/UAO 支持
-  - SVE 检测
-  - Pointer Authentication 检测
+- [x] 实现系统寄存器访问接口 (`arch/arm64/cpu/regs.rs`)
+  - [x] MSR/MRRS 指令封装 (inline asm)
+  - [ ] 通用寄存器 (x0-x30) 框架
+  - [ ] 特殊寄存器 (SP, PC, PSTATE)
+- [x] 实现 EL2 系统寄存器定义 (`arch/arm64/mod.rs` el2_regs 模块)
+  - [x] HCR_EL2, VTTBR_EL2, VTCR_EL2 编码
+  - [ ] CPTR_EL2, HSTR_EL2 (TODO)
+  - [ ] SCR_EL3 (如果支持)
+- [x] 实现 ID 寄存器解析 (`arch/arm64/cpu/regs.rs` info 模块)
+  - [x] MIDR_EL1, MPIDR_EL1
+  - [ ] ID_AA64PFR0_EL1 ~ ID_AA64MMFR2_EL1 (TODO)
+- [x] 实现 CPU 特性检测 (`arch/arm64/cpu/features.rs`)
+  - [x] CpuInfo 结构
+  - [x] CpuFeatures bitflags
+  - [ ] ARMv8.0/8.1/8.2/8.3/8.4/8.5/8.6/9.0 版本检测 (TODO)
+  - [ ] 虚拟化扩展检测 (TODO)
+  - [ ] PAN/UAO 支持 (TODO)
+  - [ ] SVE 检测 (TODO)
+  - [ ] Pointer Authentication 检测 (TODO)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm64/include/arch_regs.h`
@@ -580,19 +630,23 @@ struct vgic_vcpu_state {
 - `xvisor/arch/arm/cpu/arm64/cpu_inline_asm.h`
 
 **交付物：**
-- `arch/arm64/cpu/regs.rs`
-- `arch/arm64/cpu/el2_regs.rs`
-- `arch/arm64/cpu/id.rs`
-- `arch/arm64/cpu/features.rs`
+- [x] `arch/arm64/cpu/regs.rs` (部分完成)
+- [ ] `arch/arm64/cpu/el2_regs.rs` (整合到 mod.rs)
+- [ ] `arch/arm64/cpu/id.rs` (整合到 regs.rs)
+- [x] `arch/arm64/cpu/features.rs` (部分完成)
 
 #### 3.1.4 VCPU 上下文切换
 
+> **状态更新 (2025-12-27):** 结构体定义完成，汇编实现待完成
+
 **任务：**
-- [ ] 实现 VCPU 上下文结构 (`arch/arm64/cpu/vcpu/context.rs`)
-  - 通用寄存器 (x0-x30)
-  - 系统寄存器 (参考 arm_priv_sysregs)
-  - VFP/NEON 状态 (后续阶段)
-  - 指针认证状态 (可选)
+- [x] 实现 VCPU 上下文结构 (`arch/arm64/cpu/state.rs`)
+  - [x] SavedGprs (x0-x30)
+  - [x] SavedSpecialRegs (SP, PC, PSTATE)
+  - [x] SavedEl1SysRegs
+  - [x] SavedVfpRegs
+  - [x] ArmPrivContext
+  - [x] VcpuContext
 - [ ] 实现上下文切换汇编 (`arch/arm64/cpu/vcpu/switch.S`)
   - Host -> Guest 切换 (ERET 到 EL1)
   - Guest -> Host 切换 (异常到 EL2)
