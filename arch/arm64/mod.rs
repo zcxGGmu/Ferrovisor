@@ -6,8 +6,8 @@
 //! - Interrupt and exception handling (GIC/VGIC)
 //! - Virtualization extensions (EL2)
 //! - SMP support (PSCI, Spin Table)
-//! - Device tree support
 //! - Timer support (Generic Timer)
+//! - Device tree support
 //!
 //! ## Architecture Overview
 //!
@@ -30,6 +30,7 @@ pub mod interrupt;
 pub mod smp;
 pub mod platform;
 pub mod psci;
+pub mod timer;
 
 // Re-export key types and functions
 pub use cpu::*;
@@ -38,6 +39,7 @@ pub use interrupt::*;
 pub use smp::*;
 pub use platform::*;
 pub use psci::*;
+pub use timer::*;
 
 /// ARM64 architecture version
 pub const ARCH_VERSION: &str = "arm64";
@@ -283,6 +285,9 @@ pub fn arch_init() -> Result<(), &'static str> {
 
     // Initialize SMP
     smp::init()?;
+
+    // Initialize Timer
+    timer::init()?;
 
     // Initialize platform-specific code
     platform::init()?;

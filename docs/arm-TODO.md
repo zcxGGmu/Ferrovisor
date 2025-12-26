@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.5 (SMP 启动已完成) |
-| **状态** | 实施阶段 7 |
+| **版本** | v3.6 (Timer 虚拟化已完成) |
+| **状态** | 实施阶段 8 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -1781,21 +1781,80 @@ pub trait SmpOps {
 
 ### 阶段 8：Timer 虚拟化 (Week 25-26)
 
-#### 3.8.1 Generic Timer 支持
+#### 3.8.1 Generic Timer 支持 (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 Generic Timer 驱动 (`drivers/timer/arm_generic_timer.rs`)
+- [x] 实现 Generic Timer 驱动 (`arch/arm64/timer/generic.rs`)
   - CNTP (Physical Timer) 访问
   - CNTV (Virtual Timer) 访问
   - CNTHP (Hyp Physical Timer) 访问
   - Counter 频率配置
   - Timer 中断处理
-- [ ] 实现虚拟 Timer (`arch/arm64/timer/vtimer.rs`)
+- [x] 实现虚拟 Timer (`arch/arm64/timer/virtual_timer.rs`)
   - CNTV_CVAL_EL0, CNTV_CTL_EL0
   - CNTVCT_EL0 (Counter)
   - Timer 中断注入
-- [ ] 实现 EL2 Timer (`arch/arm64/timer/htimer.rs`)
+- [x] 实现 EL2 Timer (`arch/arm64/timer/htimer.rs`)
   - CNTHP_CVAL_EL2
+  - CNTHP_CTL_EL2
+  - Hypervisor 调度使用
+
+**参考文件：**
+- `xvisor/arch/arm/cpu/common/generic_timer.c` (16.7KB)
+- `xvisor/arch/arm/cpu/arm64/include/cpu_generic_timer.h`
+
+**实现细节:**
+- `arch/arm64/timer/mod.rs` (~260 行)
+  - Timer 类型枚举 (Physical, Virtual, HypPhysical, HypVirtual)
+  - 控制寄存器位定义 (ENABLE, IMASK, ISTATUS)
+  - read_counter() / read_counter_freq() - 系统计数器读取
+  - ticks_to_ns() / ns_to_ticks() / us_to_ticks() - 时间转换
+  - init() - Timer 初始化
+
+- `arch/arm64/timer/generic.rs` (~470 行)
+  - physical 模块 (CNTP_*_EL0 寄存器访问)
+  - virtual_ 模块 (CNTV_*_EL0 寄存器访问)
+  - hyp_physical 模块 (CNTHP_*_EL2 寄存器访问)
+  - offset 模块 (CNTVOFF_EL2 虚拟偏移)
+  - GenericTimerState 结构体 (定时器状态)
+  - read_reg() / write_reg() - 按类型读写寄存器
+  - stop_timer() / start_timer() - 定时器控制
+  - set_timer_ticks() / set_timer_cval() - 编程定时器
+
+- `arch/arm64/timer/virtual_timer.rs` (~370 行)
+  - VirtualTimerState 结构体 (虚拟定时器状态)
+  - 虚拟计数器 (带 CNTVOFF 偏移)
+  - VirtualTimerContext 结构体 (完整上下文)
+  - set_timer_ticks() / set_timer_cval() - 编程虚拟定时器
+  - save() / restore() - 状态保存/恢复
+  - inject_irq() - 注入虚拟 IRQ
+  - handle_phys_irq() - 处理物理定时器中断
+  - program_timer() / read_counter() / has_expired() - 便捷函数
+
+- `arch/arm64/timer/htimer.rs` (~350 行)
+  - HypTimerState 结构体 (Hypervisor 定时器状态)
+  - HypTimerCallback trait (定时器回调接口)
+  - HypTimerContext 结构体 (完整上下文)
+  - set_timer_ticks() / set_timer_cval() - 编程 Hyp 定时器
+  - stop_timer() / start_timer_ticks() / start_timer_cval() - 控制
+  - has_expired() / remaining_ticks() - 状态查询
+  - handle_irq() - 处理 Hypervisor 定时器中断
+
+**交付物：**
+- `arch/arm64/timer/mod.rs` (~260 行)
+- `arch/arm64/timer/generic.rs` (~470 行)
+- `arch/arm64/timer/virtual_timer.rs` (~370 行)
+- `arch/arm64/timer/htimer.rs` (~350 行)
+
+**代码统计:**
+- 新增文件: 4 个
+- 总代码量: ~1,450 行
+
+**Commit:** (待提交)
+
+---
+
+#### 3.8.2 Timer 虚拟化
   - CNTHP_CTL_EL2
   - Hypervisor 调度使用
 
