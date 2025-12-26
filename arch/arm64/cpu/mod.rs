@@ -6,6 +6,7 @@
 //! - VCPU context management
 //! - System register access and emulation
 //! - FPU/SIMD virtualization
+//! - WFI/WFE instruction handling
 //! - Assembly helpers
 
 pub mod regs;
@@ -22,12 +23,22 @@ pub mod vcpu;
 /// FPU/SIMD virtualization module
 pub mod fpu;
 
+/// WFI (Wait For Interrupt) instruction handling
+pub mod wfi;
+
+/// WFE (Wait For Event) instruction handling
+pub mod wfe;
+
 pub use regs::*;
 pub use features::*;
 pub use state::*;
 
 // Re-export FPU types
 pub use fpu::*;
+
+// Re-export WFI/WFE types
+pub use wfi::*;
+pub use wfe::*;
 
 /// Current CPU ID
 #[inline]

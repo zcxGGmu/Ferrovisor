@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.3 (PSCI 实现已完成) |
+| **版本** | v3.4 (WFI/WFE 处理已完成) |
 | **状态** | 实施阶段 6 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1610,19 +1610,53 @@ pub const PSCI_RET_ALREADY_ON: u32 = -4;
 
 ---
 
-#### 3.6.2 WFI/WFE 处理
+#### 3.6.2 WFI/WFE 处理 (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 WFI 陷阱处理 (`arch/arm64/cpu/wfi.rs`)
+- [x] 实现 WFI 陷阱处理 (`arch/arm64/cpu/wfi.rs`) (~520 行)
   - WFI 指令 trap
   - 低功耗状态处理
-- [ ] 实现 WFE 处理 (`arch/arm64/cpu/wfe.rs`)
+- [x] 实现 WFE 处理 (`arch/arm64/cpu/wfe.rs`) (~680 行)
   - SEV 指令处理
   - 事件队列管理
 
+**实现细节:**
+- `arch/arm64/cpu/wfi.rs` (~520 行)
+  - WFI ISS 位定义 (iss 模块)
+  - HCR_EL2.TWI 位定义 (hcr_el2 模块)
+  - WfiTimeout 枚举 (Indefinite, TimeoutUs, TimeoutMs)
+  - WfiWaitResult 枚举 (Success, Timeout, Interrupted, Error)
+  - WfiMode 枚举 (Nop, PassThrough, Handled)
+  - WfiState 结构体 (状态跟踪、计数)
+  - WfiHandler (WFI 处理器)
+    - handle_wfi() - 处理 WFI 指令
+    - wait_for_interrupt() - 等待中断
+    - should_trap() - 检查是否应该 trap
+    - configure_trap() - 配置 HCR_EL2.TWI
+
+- `arch/arm64/cpu/wfe.rs` (~680 行)
+  - HCR_EL2.TWE 位定义 (hcr_el2 模块)
+  - EventRegister 结构体 (事件寄存器)
+  - WfeMode 枚举 (Nop, PassThrough, Yield)
+  - WfeActionResult 枚举
+  - WfeState 结构体 (状态跟踪、SEV 计数)
+  - EventBroadcaster 结构体 (多 CPU 事件广播)
+  - WfeHandler (WFE 处理器)
+    - handle_wfe() - 处理 WFE 指令
+    - handle_sev() - 处理 SEV 指令
+    - handle_sevl() - 处理 SEVL 指令
+    - should_trap() - 检查是否应该 trap
+    - configure_trap() - 配置 HCR_EL2.TWE
+
 **交付物：**
-- `arch/arm64/cpu/wfi.rs`
-- `arch/arm64/cpu/wfe.rs`
+- `arch/arm64/cpu/wfi.rs` (~520 行)
+- `arch/arm64/cpu/wfe.rs` (~680 行)
+
+**代码统计:**
+- 新增文件: 2 个
+- 总代码量: ~1,200 行
+
+**Commit:** (待提交)
 
 ---
 
