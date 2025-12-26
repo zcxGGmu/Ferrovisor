@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.8 (GStage 集成和 Stage-2 缺页处理已完成) |
-| **状态** | 实施阶段 3 |
+| **版本** | v2.9 (关键系统寄存器实现已完成) |
+| **状态** | 实施阶段 4 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -1226,32 +1226,50 @@ pub const VGIC_MAX_LRS: usize = 16;
 - `arch/arm64/cpu/sysreg/dispatch.rs`
 - `arch/arm64/cpu/sysreg/state.rs`
 
-#### 3.4.2 关键系统寄存器实现
+#### 3.4.2 关键系统寄存器实现 (2025-12-27)
 
 **任务：**
-- [ ] 实现 ID 寄存器仿真 (`arch/arm64/cpu/sysreg/id_regs.rs`)
-  - ID_AA64PFR0_EL1 ~ ID_AA64PFR1_EL1
-  - ID_AA64DFR0_EL1 ~ ID_AA64DFR1_EL1
-  - ID_AA64ISAR0_EL1 ~ ID_AA64ISAR2_EL1
-  - ID_AA64MMFR0_EL1 ~ ID_AA64MMFR2_EL1
+- [x] 实现 ID 寄存器仿真 (`arch/arm64/cpu/sysreg/id_regs.rs`, 420 行)
+  - ID_AA64PFR0_EL1 ~ ID_AA64PFR1_EL1 (处理器特性)
+  - ID_AA64DFR0_EL1 ~ ID_AA64DFR1_EL1 (调试特性)
+  - ID_AA64ISAR0_EL1 ~ ID_AA64ISAR2_EL1 (指令集属性)
+  - ID_AA64MMFR0_EL1 ~ ID_AA64MMFR2_EL1 (内存模型)
   - MIDR_EL1, MPIDR_EL1, REVIDR_EL1
-- [ ] 实现系统控制寄存器 (`arch/arm64/cpu/sysreg/sctlr.rs`)
-  - SCTLR_EL1 仿真
-  - ACTLR_EL1 仿真
-- [ ] 实现页表寄存器 (`arch/arm64/cpu/sysreg/mm.rs`)
-  - TTBR0_EL1, TTBR1_EL1
-  - TCR_EL1
-  - MAIR_EL1
-  - AMAIR_EL1
-- [ ] 实现调试寄存器 (`arch/arm64/cpu/sysreg/debug.rs`)
-  - MDSCR_EL1
-  - DBG registers
+  - IdRegisters 集合, read_id_reg() / write_id_reg()
+- [x] 实现系统控制寄存器 (`arch/arm64/cpu/sysreg/sctlr.rs`, 430 行)
+  - SCTLR_EL1 仿真 (MMU/Cache/Alignment 控制)
+  - ACTLR_EL1 仿真 (辅助控制)
+  - CPACR_EL1 仿真 (协处理器访问控制)
+  - SystemControlRegs 集合, read_ctrl_reg() / write_ctrl_reg()
+  - enable_mmu() / disable_mmu() / is_mmu_enabled()
+- [x] 实现页表寄存器 (`arch/arm64/cpu/sysreg/mm.rs`, 570 行)
+  - TTBR0_EL1, TTBR1_EL1 (页表基址)
+  - TCR_EL1 (地址转换控制)
+  - MAIR_EL1 (内存属性)
+  - AMAIR_EL1 (辅助内存属性)
+  - MemoryMgmtRegs 集合, read_mm_reg() / write_mm_reg()
+  - invalidate_tlb() TLB 无效化
+- [x] 实现调试寄存器 (`arch/arm64/cpu/sysreg/debug.rs`, 480 行)
+  - MDSCR_EL1 (监控调试系统控制)
+  - Dbgbvr0El1 / Dbgbcr0El1 (断点寄存器)
+  - Dbgwvr0El1 / Dbgwcr0El1 (观察点寄存器)
+  - DebugRegs 集合, read_debug_reg() / write_debug_reg()
+  - enable_monitoring() / enable_single_step()
 
 **交付物：**
-- `arch/arm64/cpu/sysreg/id_regs.rs`
-- `arch/arm64/cpu/sysreg/sctlr.rs`
-- `arch/arm64/cpu/sysreg/mm.rs`
-- `arch/arm64/cpu/sysreg/debug.rs`
+- [x] `arch/arm64/cpu/sysreg/id_regs.rs`
+- [x] `arch/arm64/cpu/sysreg/sctlr.rs`
+- [x] `arch/arm64/cpu/sysreg/mm.rs`
+- [x] `arch/arm64/cpu/sysreg/debug.rs`
+- [x] `arch/arm64/cpu/sysreg/mod.rs` (更新导出)
+
+**代码统计：**
+- 新增/修改文件: 5 个
+- 总代码量: ~1,900 行
+
+**Commit:** 9c951f2
+
+---
 
 #### 3.4.3 CP15 协处理器仿真 (ARMv7)
 
