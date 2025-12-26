@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.7 (VCPU 上下文切换已完成) |
+| **版本** | v2.8 (GStage 集成和 Stage-2 缺页处理已完成) |
 | **状态** | 实施阶段 3 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -206,6 +206,76 @@
 - 总代码量: ~800 行
 
 **Commit:** 427e800
+
+---
+
+#### 阶段 3.2.3: GStage 集成和 Stage-2 缺页处理 (2025-12-27)
+- [x] `arch/arm64/mmu/gstage.rs` - G-Stage (Stage-2) 集成 (680 行)
+  - **GStageMode 枚举** - Stage-2 翻译模式
+    * Ip4k_48bit: 标准 48-bit IPA (4 级页表)
+    * Ip4k_40bit/42bit/44bit: 不同 IPA 大小
+    * Ip4k_52bit: ARMv8.4+ 扩展 IPA
+    * Ip16k_*: 16KB 粒度变体
+    * Ip64k_*: 64KB 粒度变体
+    * ipa_bits(), levels(), t0sz(), sl0() 辅助方法
+  - **GStageCapabilities** - 硬件能力检测
+    * 支持的翻译模式检测
+    * 最大 IPA 位数
+    * 支持的粒度大小 (4KB/16KB/64KB)
+    * granule_16k/granule_64k 检测
+    * 虚拟化/硬件遍历/连续提示/XN控制特性
+  - **GStageContext** - 每个 VM 的翻译上下文
+    * VMID、模式、根页表物理地址
+    * VTTBR_EL2 和 VTCR_EL2 寄存器值
+    * translate() - IPA 到 HPA 的页表遍历
+    * walk_page_table() - 4 级页表遍历实现
+    * flush_tlb() / flush_tlb_ipa() - TLB 无效化
+    * 翻译统计信息
+  - **GStageManager** - 多 VM 上下文管理
+    * VMID 分配和管理
+    * create_context() - 创建新 VM 上下文
+    * destroy_context() - 销毁上下文并释放 VMID
+    * set_active_vmid() - 激活 VM (VTTBR_EL2 切换)
+    * translate_active() - 为当前活跃 VM 翻译 IPA
+  - **全局管理函数**
+    * init() - 初始化全局 G-stage 管理器
+    * get() / get_mut() - 获取全局管理器
+    * create_context_auto() - 自动检测最佳模式
+    * get_capabilities() - 获取硬件能力
+- [x] `arch/arm64/mmu/fault.rs` - Stage-2 缺页处理 (360 行)
+  - **Stage2Fault 枚举** - Stage-2 缺页类型
+    * Translation { level } - 翻译缺页 (未映射)
+    * AccessFlag { level } - 访问标志缺页
+    * Permission { level } - 权限缺页
+    * AddressSize - 地址大小超范围
+    * Alignment - 对齐错误
+    * TlbConflict - TLB 冲突
+    * HardwareUpdateDirty / HardwareUpdateAccessFlag - 硬件管理
+  - **FaultInfo 结构** - 缺页信息
+    * fault, ipa, status_code, iss 字段
+    * s1ptw, is_stage2, write, instruction 标志
+    * from_esr() - 从 ESR_EL2 解码缺页
+    * decode_stage2_fault() - 解码 Stage-2 缺码
+    * is_recoverable() - 检查缺页是否可恢复
+    * description() - 获取缺页描述
+  - **缺页处理函数**
+    * handle_stage2_fault() - 处理 Stage-2 缺页
+    * handle_translation_fault() - 处理翻译缺页
+    * handle_permission_fault() - 处理权限缺页
+    * handle_access_flag_fault() - 处理访问标志缺页
+    * handle_alignment_fault() - 处理对齐缺页
+  - **异常注入**
+    * FaultResolution 枚举 - 缺页处理结果
+    * resolve_fault() - 尝试解析缺页
+    * inject_stage2_fault() - 准备注入到客户机的异常信息
+    * ExceptionInfo 结构 - 异常注入信息
+- [x] `arch/arm64/mmu/mod.rs` - 更新导出 (添加 gstage 和 fault 模块)
+
+**代码统计:**
+- 新增/修改文件: 3 个
+- 总代码量: ~1,040 行
+
+**Commit:** f8f6311
 
 ---
 
