@@ -6,13 +6,43 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.1 (进度追踪版) |
-| **状态** | 实施阶段 0 |
+| **版本** | v2.2 (MMU Stage-2 已完成) |
+| **状态** | 实施阶段 2 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
 
 ### 已完成 ✅
+
+#### 阶段 2.1: MMU Stage-2 页表管理 (2025-12-27)
+- [x] `arch/arm64/mmu/stage2.rs` - Stage-2 页表结构 (430 行)
+  - PTE bit 定义 (VALID, TABLE, AF, SH, HAP, MEMATTR, XN)
+  - Block/Page descriptor 创建
+  - PageTable 结构 (512 entries, 4KB aligned)
+  - PageTableLevel 枚举 (L0-L3) 和辅助方法
+  - level_index() 函数
+- [x] `arch/arm64/mmu/operations.rs` - 页表操作 (455 行)
+  - MapFlags 结构体 (cacheable, bufferable, writable, executable, device)
+  - map_range() - IPA -> PA 映射
+  - unmap_range() - 取消映射
+  - walk_page_table() - 页表遍历
+  - TLB 操作: tlb_flush_ipa(), tlb_flush_all()
+  - pte_sync() - 页表项同步
+- [x] `arch/arm64/mmu/vttbr.rs` - VTTBR_EL2 管理 (214 行)
+  - VmidAllocator (AtomicU16 + AtomicU64 bitmap)
+  - allocate_vmid() - VMID 分配 (fast/slow path)
+  - free_vmid() - VMID 释放
+  - is_vmid_allocated() - 检查 VMID 状态
+  - make_vttbr() - 创建 VTTBR_EL2 值
+  - read_vttbr_el2()/write_vttbr_el2() - 寄存器访问
+
+**代码统计:**
+- 新增/修改文件: 3 个
+- 总代码量: ~1,100 行
+
+**Commit:** (待提交)
+
+---
 
 #### 阶段 0.1: ARM64 CPU 抽象层接口和目录结构 (2025-12-27)
 - [x] 创建 `arch/arm64/` 目录结构
@@ -699,22 +729,24 @@ tpidrro_el0 0xA0
 
 #### 3.2.1 Stage-2 页表管理
 
+> **状态更新 (2025-12-27):** ✅ 已完成 Stage-2 页表结构、VTTBR_EL2 管理和页表操作
+
 **任务：**
-- [ ] 实现 Stage-2 页表结构 (`arch/arm64/mmu/stage2.rs`)
-  - 4级页表 (48-bit IPA)
-  - 3级页表 (可选 40-bit IPA)
-  - 页表项格式定义
-- [ ] 实现 VTTBR_EL2 管理 (`arch/arm64/mmu/vttbr.rs`)
-  - VMID 分配器
-  - 页表基址管理
-  - VMID 8-bit 分配 (256 VMs)
+- [x] 实现 Stage-2 页表结构 (`arch/arm64/mmu/stage2.rs`)
+  - [x] 4级页表 (48-bit IPA)
+  - [x] 3级页表 (可选 40-bit IPA)
+  - [x] 页表项格式定义 (PTE bits, masks, attributes)
+- [x] 实现 VTTBR_EL2 管理 (`arch/arm64/mmu/vttbr.rs`)
+  - [x] VMID 分配器 (AtomicU64 bitmap, 线程安全)
+  - [x] 页表基址管理
+  - [x] VMID 8-bit 分配 (256 VMs)
 - [ ] 实现 VTCR_EL2 配置 (`arch/arm64/mmu/vtcr.rs`)
-  - T0SZ, SL0, IRGN0, ORGN0, SH0, TG0 配置
-  - VTCR_EL2 值计算
-- [ ] 实现 Stage-2 页表操作 (`arch/arm64/mmu/operations.rs`)
-  - 页表映射/取消映射
-  - TLB 无效化 (TLBI IPAS2E1IS, TLBI VMALLS12E1IS)
-  - 缓存维护
+  - [ ] T0SZ, SL0, IRGN0, ORGN0, SH0, TG0 配置
+  - [ ] VTCR_EL2 值计算
+- [x] 实现 Stage-2 页表操作 (`arch/arm64/mmu/operations.rs`)
+  - [x] 页表映射/取消映射 (map_range, unmap_range)
+  - [x] TLB 无效化 (TLBI IPAS2E1IS, TLBI VMALLS12E1IS)
+  - [x] 缓存维护 (pte_sync, DMB/DSB)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/common/mmu_lpae.c` (397 行)
