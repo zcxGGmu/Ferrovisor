@@ -17,9 +17,15 @@ pub mod vtcr;
 /// Memory attributes
 pub mod attrs;
 
+/// Address translation (IPA -> PA)
+pub mod translate;
+
 // Re-export commonly used types
 pub use stage2::{PageTableEntry, PageTable, PageTableLevel, pte, block_sizes, index, level_index};
 pub use operations::{MapFlags, map_range, unmap_range, tlb_flush_ipa, tlb_flush_all, pte_sync};
+pub use vtcr::{VtcrConfig, read_vtcr_el2, write_vtcr_el2, init_default_48bit};
+pub use attrs::{MemoryType, Shareability, MemoryAttr, MairConfig, read_mair_el2, write_mair_el2};
+pub use translate::{translate_ipa, TranslationResult, TranslationFault, TranslationError, walk_debug};
 
 /// Initialize MMU
 pub fn init() -> Result<(), &'static str> {

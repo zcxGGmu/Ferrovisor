@@ -6,13 +6,50 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.2 (MMU Stage-2 已完成) |
+| **版本** | v2.3 (MMU 配置和地址转换已完成) |
 | **状态** | 实施阶段 2 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
 
 ### 已完成 ✅
+
+#### 阶段 2.2: MMU 配置和地址转换 (2025-12-27)
+- [x] `arch/arm64/mmu/vtcr.rs` - VTCR_EL2 配置 (353 行)
+  - VTCR_EL2 完整 bit 定义 (T0SZ, SL0, IRGN0, ORGN0, SH0, TG0, PS, VS, HD, HA)
+  - VtcrConfig 结构体 (48-bit/40-bit/44-bit 默认配置)
+  - encode()/decode() 方法
+  - read_vtcr_el2()/write_vtcr_el2() 寄存器访问
+  - init_default_48bit() 初始化函数
+  - va_size()/pa_size() 辅助方法
+- [x] `arch/arm64/mmu/attrs.rs` - 内存属性管理 (457 行)
+  - MemoryType 枚举 (Device, DeviceRE, DeviceGRE, NormalWBWA, NormalWT, NormalNC)
+  - Shareability 枚举
+  - MemoryAttr 结构体 (device(), normal_wb_wa(), normal_wt(), normal_nc())
+  - MairConfig 结构体 (8 个属性索引)
+  - MAIR_EL2 属性编码 (Device-nGnRnE, Device-nGnRE, Normal WB-WA, WT, NC)
+  - Stage-2 内存属性编码 (to_stage2_attr())
+  - read_mair_el2()/write_mair_el2() 寄存器访问
+  - set_attr()/get_attr() 属性管理
+- [x] `arch/arm64/mmu/translate.rs` - IPA -> PA 地址转换 (新建，330 行)
+  - translate_ipa() - IPA 到 PA 的页表遍历
+  - TranslationResult 结构 (pa, block_size, level, xn, hap, memattr, af, sh, contiguous)
+  - TranslationFault 枚举
+  - TranslationError 枚举
+  - is_range_mapped() - 检查地址范围映射状态
+  - get_ipa_attributes() - 获取内存属性
+  - is_ipa_writable()/is_ipa_readable()/is_ipa_executable() - 权限检查
+  - walk_debug() - 页表遍历调试信息
+  - PageTableWalkInfo 调试结构
+- [x] `arch/arm64/mmu/mod.rs` - 更新导出
+
+**代码统计:**
+- 新增/修改文件: 3 个
+- 总代码量: ~1,140 行
+
+**Commit:** (待提交)
+
+---
 
 #### 阶段 2.1: MMU Stage-2 页表管理 (2025-12-27)
 - [x] `arch/arm64/mmu/stage2.rs` - Stage-2 页表结构 (430 行)
@@ -740,9 +777,12 @@ tpidrro_el0 0xA0
   - [x] VMID 分配器 (AtomicU64 bitmap, 线程安全)
   - [x] 页表基址管理
   - [x] VMID 8-bit 分配 (256 VMs)
-- [ ] 实现 VTCR_EL2 配置 (`arch/arm64/mmu/vtcr.rs`)
-  - [ ] T0SZ, SL0, IRGN0, ORGN0, SH0, TG0 配置
-  - [ ] VTCR_EL2 值计算
+- [x] 实现 VTCR_EL2 配置 (`arch/arm64/mmu/vtcr.rs`)
+  - [x] T0SZ, SL0, IRGN0, ORGN0, SH0, TG0 配置
+  - [x] VTCR_EL2 值计算
+  - [x] 所有 bit 定义 (TG0, PS, VS, HD, HA 等)
+  - [x] read_vtcr_el2()/write_vtcr_el2() 寄存器访问
+  - [x] encode()/decode() 方法
 - [x] 实现 Stage-2 页表操作 (`arch/arm64/mmu/operations.rs`)
   - [x] 页表映射/取消映射 (map_range, unmap_range)
   - [x] TLB 无效化 (TLBI IPAS2E1IS, TLBI VMALLS12E1IS)
@@ -774,18 +814,21 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 
 #### 3.2.2 地址转换
 
+> **状态更新 (2025-12-27):** ✅ 已完成 IPA -> PA 转换和内存属性管理
+
 **任务：**
-- [ ] 实现 IPA -> PA 转换 (`arch/arm64/mmu/translate.rs`)
-  - Walk Stage-2 页表
-  - 处理页错误
-  - Fault 解码
-- [ ] 实现内存属性管理 (`arch/arm64/mmu/attrs.rs`)
-  - MAIR_EL2 配置
-  - Device/Greedy/Normal 内存类型
-  - Shareability 属性
-- [ ] 实现 VMID 管理 (`arch/arm64/mmu/vmid.rs`)
-  - VMID 分配/回收
-  - VMID 刷新 (VMALL)
+- [x] 实现 IPA -> PA 转换 (`arch/arm64/mmu/translate.rs`)
+  - [x] Walk Stage-2 页表
+  - [x] 处理页错误
+  - [x] Fault 解码
+- [x] 实现内存属性管理 (`arch/arm64/mmu/attrs.rs`)
+  - [x] MAIR_EL2 配置
+  - [x] Device/Greedy/Normal 内存类型
+  - [x] Shareability 属性
+  - [x] Stage-2 属性编码
+- [x] 实现 VMID 管理 (`arch/arm64/mmu/vmid.rs`)
+  - [x] VMID 分配/回收 (已在 vttbr.rs 中实现)
+  - [x] VMID 刷新 (VMALL) (已在 vttbr.rs 中实现)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/common/mmu_lpae.c` - arch_mmu_level_index()
