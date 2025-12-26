@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.4 (GIC/VGIC 中断控制器已完成) |
-| **状态** | 实施阶段 3 |
+| **版本** | v2.6 (虚拟中断和系统寄存器模拟已完成) |
+| **状态** | 实施阶段 4 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -80,6 +80,80 @@
 **代码统计:**
 - 新增/修改文件: 2 个
 - 总代码量: ~1,380 行
+
+**Commit:** (待提交)
+
+---
+
+#### 阶段 2.4: 虚拟中断处理 (2025-12-27)
+- [x] `arch/arm64/interrupt/virq.rs` - 虚拟中断处理 (470 行)
+  - VirtIrqType 枚举 (Reset, Undefined, Soft, PrefetchAbort, DataAbort, HypCall, External, ExternalFiq)
+  - IrqState 枚举 (Inactive, Pending, Active, ActiveAndPending)
+  - VirtInterrupt 结构体 (irq, phys_irq, priority, state, irq_type)
+  - HCR_EL2 虚拟中断位定义 (VI, VF, IMO, FMO, AMO)
+  - inject_virq() - 通过 VGIC 注入虚拟中断
+  - inject_hcr_virq() - 通过 HCR_EL2.VI/VF 注入 (fallback)
+  - deassert_virq() - 取消虚拟中断
+  - virq_pending() - 检查挂起的虚拟中断
+  - execute_virq() - 执行虚拟中断处理
+  - eoi_interrupt() - 中断结束处理
+  - configure_interrupt_delegation() - 配置中断委托 (HCR_EL2.AMO/IMO/FMO)
+  - assert_virq()/deassert_irq() - 主要入口点
+
+**代码统计:**
+- 新增/修改文件: 1 个
+- 总代码量: ~470 行
+
+**Commit:** (待提交)
+
+---
+
+#### 阶段 2.5: 系统寄存器虚拟化 (2025-12-27)
+- [x] `arch/arm64/cpu/sysreg/mod.rs` - 系统寄存器模块主文件
+- [x] `arch/arm64/cpu/sysreg/state.rs` - 系统寄存器状态 (250+ 行)
+  - SysRegs 结构体 (完整 EL1/EL0 系统寄存器状态)
+    - SP_EL0, SP_EL1, ELR_EL1, SPSR_EL1
+    - MIDR_EL1, MPIDR_EL1
+    - SCTLR_EL1, ACTLR_EL1, CPACR_EL1
+    - TTBR0_EL1, TTBR1_EL1, TCR_EL1
+    - ESR_EL1, FAR_EL1, PAR_EL1
+    - MAIR_EL1, VBAR_EL1, CONTEXTIDR_EL1
+    - TPIDR_EL0, TPIDRRO_EL0, TPIDR_EL1
+    - 32-bit SPSR (ABT, UND, IRQ, FIQ)
+    - DACR32_EL2, IFSR32_EL2, TEECR32_EL1, TEEHBR32_EL1, FPEXC32_EL2
+  - TrapState 结构体 (HCR_EL2, HSTR_EL2, CPTR_EL2 trap bits)
+  - save_from_hw() - 从硬件保存系统寄存器状态
+  - restore_to_hw() - 恢复系统寄存器状态到硬件
+- [x] `arch/arm64/cpu/sysreg/dispatch.rs` - 系统寄存器访问分发器 (400+ 行)
+  - SysRegEncoding 结构体 (Op0, Op1, CRn, CRm, Op2)
+  - Cp15Encoding 结构体 (opc1, opc2, CRn, CRm)
+  - RegReadResult/RegWriteResult 枚举
+  - SysRegDispatcher 结构体
+    - read_sysreg() - 读取系统寄存器
+    - write_sysreg() - 写入系统寄存器
+    - read_cp15() - 读取 CP15 寄存器
+    - write_cp15() - 写入 CP15 寄存器
+  - 完整的 EL1 系统寄存器支持 (SCTLR, ACTLR, CPACR, TTBR0/1, TCR, ESR, FAR, PAR, MAIR, VBAR, CONTEXTIDR, TPIDR 等)
+  - ICC_SRE_EL1 仿真 (RAZ/WI for GICv3 compatibility)
+- [x] `arch/arm64/cpu/sysreg/trap.rs` - Trap 处理 (300+ 行)
+  - hstr_el2 模块 (HSTR_EL2 bit 定义: T0-T15)
+  - cptr_el2 模块 (CPTR_EL2 bit 定义: TFP, TTA, TCPAC)
+  - TrapType 枚举 (SysReg, Cp15, Cp14, FpSimd, Trace)
+  - TrapHandler 结构体
+    - init_traps() - 初始化 trap 配置
+    - set_hstr_traps() - 配置 HSTR_EL2 trap
+    - set_cptr_traps() - 配置 CPTR_EL2 trap
+    - is_cp15_trapped() - 检查 CP15 trap
+    - is_sysreg_trapped() - 检查系统寄存器 trap
+    - is_fpsimd_trapped() - 检查 FP/SIMD trap
+    - handle_sysreg_read/write() - 处理 trap 的系统寄存器访问
+    - handle_cp15_read/write() - 处理 trap 的 CP15 访问
+- [x] `arch/arm64/cpu/mod.rs` - 更新导出 (添加 sysreg 模块)
+- [x] `arch/arm64/interrupt/mod.rs` - 更新导出 (添加 virq 模块)
+
+**代码统计:**
+- 新增文件: 4 个
+- 总代码量: ~950+ 行
 
 **Commit:** (待提交)
 

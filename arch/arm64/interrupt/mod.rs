@@ -21,6 +21,12 @@ pub use vgic::{
     VgicVcpuState, VgicGuestState, VgicOps, VgicV2Ops, VgicDevice,
     VGIC_MAX_NCPU, VGIC_MAX_NIRQ, VGIC_MAX_LRS, VGIC_LR_UNKNOWN,
 };
+pub use virq::{
+    VirtIrqType, IrqState, VirtInterrupt,
+    inject_virq, deassert_virq, virq_pending, execute_virq,
+    eoi_interrupt, configure_interrupt_delegation,
+    assert_virq, deassert_irq, get_irq_priority, vgic_available,
+};
 
 /// Initialize interrupt handling
 pub fn init() -> Result<(), &'static str> {

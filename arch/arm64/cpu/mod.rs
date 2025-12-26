@@ -4,13 +4,16 @@
 //! - Register access and management
 //! - CPU initialization and feature detection
 //! - VCPU context management
-//! - System register access
+//! - System register access and emulation
 //! - Assembly helpers
 
 pub mod regs;
 pub mod features;
 pub mod state;
 pub mod init;
+
+/// System register emulation module
+pub mod sysreg;
 
 pub use regs::*;
 pub use features::*;
