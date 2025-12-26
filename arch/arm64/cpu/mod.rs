@@ -5,6 +5,7 @@
 //! - CPU initialization and feature detection
 //! - VCPU context management
 //! - System register access and emulation
+//! - FPU/SIMD virtualization
 //! - Assembly helpers
 
 pub mod regs;
@@ -18,9 +19,15 @@ pub mod sysreg;
 /// VCPU context switching module
 pub mod vcpu;
 
+/// FPU/SIMD virtualization module
+pub mod fpu;
+
 pub use regs::*;
 pub use features::*;
 pub use state::*;
+
+// Re-export FPU types
+pub use fpu::*;
 
 /// Current CPU ID
 #[inline]

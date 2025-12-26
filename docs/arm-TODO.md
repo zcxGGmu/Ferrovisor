@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.1 (ARM32 CP14 协处理器仿真已完成) |
+| **版本** | v3.2 (FPU/SIMD 虚拟化已完成) |
 | **状态** | 实施阶段 4 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1443,43 +1443,84 @@ pub enum Cp14RegType {
 
 #### 3.5.1 VFP/NEON 保存和恢复
 
+> **状态更新 (2025-12-27):** ✅ 已完成
+
 **任务：**
-- [ ] 实现 VFP 寄存器保存 (`arch/arm64/cpu/fpu/vfp.rs`)
-  - V registers (V0-V31, 128-bit)
-  - FPSCR, FPCR, FPSR
-  - MVFR0, MVFR1, MVFR2
-- [ ] 实现 NEON/ASIMD 支持 (`arch/arm64/cpu/fpu/neon.rs`)
-  - SIMD 寄存器管理
-  - SVE 寄存器管理 (可选)
-- [ ] 实现 Lazy FPU 切换 (`arch/arm64/cpu/fpu/lazy.rs`)
-  - CPTR_EL2.TFP 设置
-  - FPU trap 处理
-  - 延迟保存/恢复
+- [x] 实现 VFP 寄存器保存 (`arch/arm64/cpu/fpu/vfp.rs`, ~580 行)
+  - V registers (V0-V31, 128-bit) - 存储为 64 x u64
+  - FPCR, FPSR 浮点控制/状态寄存器
+  - MVFR0, MVFR1, MVFR2 媒体和 VFP 特性寄存器
+  - D/S/H/B 寄存器访问 (64/32/16/8-bit)
+- [x] 实现 NEON/ASIMD 支持 (`arch/arm64/cpu/fpu/neon.rs`, ~440 行)
+  - SimdVec128: 128-bit 向量寄存器封装
+  - SimdElementType: SIMD 元素类型 (S8/U8 ~ F64)
+  - SimdLaneCount: SVE 向量长度 (128-2048 bits)
+  - SVE 上下文管理 (可选)
+  - 向量操作 (AND, OR, XOR, BIC, 加法等)
+- [x] 实现 Lazy FPU 切换 (`arch/arm64/cpu/fpu/lazy.rs`, ~440 行)
+  - CptrEl2: CPTR_EL2 寄存器管理
+  - FpuTrapInfo: FPU 陷阱信息
+  - LazyFpuState: Clean/Active/Dirty 状态
+  - LazyFpuContext: VCPU 延迟 FPU 上下文
+  - LazyFpuManager: 全局 FPU 管理器
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm64/cpu_vcpu_vfp.c` (156 行)
 - `xvisor/arch/arm/cpu/arm32ve/cpu_vcpu_vfp.c` (193 行)
-- `xvisor/arch/arm/cpu/arm64/include/cpu_vcpu_vfp.h`
-- `xvisor/arch/arm/cpu/arm64/include/arm_priv_vfp.h`
+- `xvisor/arch/arm/cpu/arm64/include/arch_regs.h`
 
-**arm_priv_vfp 结构:**
+**主要结构:**
+
 ```rust
-pub struct ArmPrivVfp {
-    pub mvfr0: u32,      // Media and VFP Feature Register 0
-    pub mvfr1: u32,      // Media and VFP Feature Register 1
-    pub mvfr2: u32,      // Media and VFP Feature Register 2
-    pub fpcr: u32,       // Floating-point Control Register
-    pub fpsr: u32,       // Floating-point Status Register
-    pub fpexc32: u32,    // FP Exception Register (ARMv7)
-    pub fpregs: [u64; 64], // 32 x 128-bit FP registers
+// VFP Registers
+pub struct VfpRegs {
+    pub mvfr0: Mvfr0El1,    // Feature Register 0
+    pub mvfr1: Mvfr1El1,    // Feature Register 1
+    pub mvfr2: Mvfr2El1,    // Feature Register 2
+    pub fpcr: Fpcr,         // Floating-point Control
+    pub fpsr: Fpsr,         // Floating-point Status
+    pub fpexc32: Fpexc32El2, // FP Exception (AArch32)
+    pub vregs: [u64; 64],   // 32 x 128-bit FP registers
+}
+
+// NEON/ASIMD
+pub struct NeonContext {
+    pub vfp: VfpRegs,
+    pub sve: Option<SveContext>,
+    pub asimd_enabled: bool,
+    pub sve_enabled: bool,
+}
+
+// Lazy FPU
+pub struct LazyFpuContext {
+    pub vfp: VfpRegs,
+    pub neon: NeonContext,
+    pub state: LazyFpuState,
+    pub enabled: bool,
+    pub cptr: CptrEl2,
 }
 ```
 
+**关键功能:**
+- VFP 寄存器访问: vreg(), dreg(), sreg(), hreg(), breg()
+- 向量操作: vec_add(), and(), or(), xor(), bic()
+- FPU 陷阱处理: handle_trap(), activate(), deactivate()
+- 延迟切换: switch_to(), save_host(), restore_host()
+- 上下文管理: save(), restore(), dump()
+
 **交付物：**
-- `arch/arm64/cpu/fpu/mod.rs`
-- `arch/arm64/cpu/fpu/vfp.rs`
-- `arch/arm64/cpu/fpu/neon.rs`
-- `arch/arm64/cpu/fpu/lazy.rs`
+- [x] `arch/arm64/cpu/fpu/mod.rs` (~130 行)
+- [x] `arch/arm64/cpu/fpu/vfp.rs` (~580 行)
+- [x] `arch/arm64/cpu/fpu/neon.rs` (~440 行)
+- [x] `arch/arm64/cpu/fpu/lazy.rs` (~440 行)
+- [x] `arch/arm64/cpu/mod.rs` (更新导出)
+
+**代码统计：**
+- 新增文件: 4 个
+- 修改文件: 1 个
+- 总代码量: ~1,590 行
+
+**Commit:** (待提交)
 
 ---
 
