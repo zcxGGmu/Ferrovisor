@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.9 (关键系统寄存器实现已完成) |
+| **版本** | v3.0 (ARM32 CP15 协处理器仿真已完成) |
 | **状态** | 实施阶段 4 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1273,51 +1273,112 @@ pub const VGIC_MAX_LRS: usize = 16;
 
 #### 3.4.3 CP15 协处理器仿真 (ARMv7)
 
+> **状态更新 (2025-12-27):** ✅ 已完成
+
 **任务：**
-- [ ] 实现 CP15 协处理器框架 (`arch/arm32/cpu/coproc/cp15.rs`)
-- [ ] 实现 CP15 寄存器读写
-  - CRn=0: MIDR, CCSIDR, CLIDR, CCSIDR2
+- [x] 实现 CP15 协处理器框架 (`arch/arm32/cpu/coproc/cp15.rs`, ~1,100 行)
+- [x] 实现 CP15 寄存器读写
+  - CRn=0: MIDR, CCSIDR, CLIDR, CCSIDR2, PFR/DFR/MMFR/ISAR
   - CRn=1: SCTLR, ACTLR, CPACR
   - CRn=2: TTBR0, TTBR1, TTBCR
   - CRn=3: DACR
-  - CRn=5: DFSR, IFSR
+  - CRn=5: DFSR, IFSR, ADFSR, AIFSR
   - CRn=6: DFAR, IFAR
-  - CRn=7: 缓存操作
-  - CRn=8: TLB 操作
-  - CRn=9: 性能监控
+  - CRn=7: 缓存操作 (PAR, DCCISW, DCCSW)
+  - CRn=9: 性能监控 (PMCR, PMCNTEN, PMOVSR, PMXEVTYPER)
   - CRn=10: PRRR, NMRR
-  - CRn=12: VBAR, MVBAR, ISR
-  - CRn=13: FCSE, CONTEXT
-  - CRn=15: 实现特定
+  - CRn=12: VBAR
+  - CRn=13: FCSE, CONTEXT, TPIDRURW/TPIDRURO/TPIDRPRW
+  - CRn=15: 实现特定 (PCR, CBAR)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm32ve/cpu_vcpu_cp15.c` (653 行)
 - `xvisor/arch/arm/cpu/arm32ve/include/cpu_vcpu_cp15.h`
 
-**CP15 寄存器类别 (653 行代码):**
+**CP15 寄存器结构 (653 行代码):**
 ```rust
 pub enum Cp15Register {
-    // CRn=0
+    // CRn=0 - Identification Registers
     Midr,        // Main ID Register
+    Mpidr,       // Multiprocessor ID Register
     Ctr,         // Cache Type Register
-    TcmType,     // TCM Type Register
-    Ccsidr,      // Cache Size ID Register
+    Pfr0/Pfr1,   // Processor Feature Registers
+    Dfr0,        // Debug Feature Register
+    Mmfr0-Mmfr3, // Memory Model Feature Registers
+    Isar0-Isar5, // Instruction Set Attribute Registers
+    Ccsidr,      // Cache Size ID Registers
     Clidr,       // Cache Level ID Register
-    // CRn=1
+    // CRn=1 - System Control
     Sctlr,       // System Control Register
     Actlr,       // Auxiliary Control Register
     Cpacr,       // Coprocessor Access Control Register
-    // CRn=2
-    Ttbr0,       // Translation Table Base Register 0
-    Ttbr1,       // Translation Table Base Register 1
+    // CRn=2 - MMU
+    Ttbr0/Ttbr1, // Translation Table Base Registers
     Ttbcr,       // Translation Table Base Control Register
-    // ... 等等
+    Dacr,        // Domain Access Control Register
+    // CRn=5 - Fault Status
+    Dfsr/Ifsr,   // Data/Instruction Fault Status
+    Adfsr/Aifsr, // Auxiliary Fault Status
+    // CRn=6 - Fault Address
+    Dfar/Ifar,   // Data/Instruction Fault Address
+    // CRn=7 - Address Translation
+    Par/Par64,   // Physical Address Registers
+    // CRn=9 - Performance Monitor
+    Pmcr,        // Performance Monitor Control
+    Pmcnten,     // Count Enable Set
+    Pmovsr,      // Overflow Flag Status
+    Pmxevtyper,  // Event Type Select
+    Pmuserenr,   // User Enable
+    Pminten,     // Interrupt Enable
+    // CRn=10 - Memory Attributes
+    Prrr,        // Primary Region Remap Register
+    Nmrr,        // Normal Memory Remap Register
+    // CRn=12 - VBAR
+    Vbar,        // Vector Base Address Register
+    // CRn=13 - TLS
+    Tpidrurw,    // Thread ID Register User RW
+    Tpidruro,    // Thread ID Register User RO
+    Tpidrprw,    // Thread ID Register Privileged RW
+    Fcseidr,     // FCSE Process ID Register
+    Contextidr,  // Context ID Register
 }
 ```
 
+**主要结构：**
+- `Cp15Regs`: 完整 CP15 寄存器状态集合
+- `Cp15IdRegs`: 识别和特性寄存器 (ID Registers)
+- `Cp15CtrlRegs`: 系统控制寄存器 (SCTLR, CPACR)
+- `Cp15MmuRegs`: MMU 寄存器 (TTBR0/1, TTBCR, DACR)
+- `Cp15FaultRegs`: 故障状态/地址寄存器
+- `Cp15TranslateRegs`: 地址转换寄存器 (PAR)
+- `Cp15PerfRegs`: 性能监控寄存器
+- `Cp15AttrRegs`: 内存属性寄存器 (PRRR, NMRR)
+- `Cp15TlsRegs`: TLS 和线程 ID 寄存器
+- `Cp15Encoding`: CP15 指令编码 (opc1, opc2, CRn, CRm)
+- `ArmCpuId`: ARM CPU ID 枚举 (Cortex-A7/A8/A9/A15)
+
+**关键函数：**
+- `read()` / `write()`: CP15 寄存器读写分发
+- `for_cpu()`: 为特定 CPU 类型创建 CP15 寄存器
+- `read_id_reg()`: CRn=0 识别寄存器读取
+- `read_ctrl_reg()` / `write_ctrl_reg()`: CRn=1 控制寄存器
+- `read_ttb_reg()` / `write_ttb_reg()`: CRn=2 MMU 寄存器
+- `read_fault_status()` / `write_fault_status()`: CRn=5 故障状态
+- `read_perf_reg()` / `write_perf_reg()`: CRn=9 性能监控
+- `read_tls_reg()` / `write_tls_reg()`: CRn=13 TLS 寄存器
+
 **交付物：**
-- `arch/arm32/cpu/coproc/cp15.rs`
-- `arch/arm32/cpu/coproc/mod.rs`
+- [x] `arch/arm32/cpu/coproc/cp15.rs` (~1,100 行)
+- [x] `arch/arm32/cpu/coproc/mod.rs`
+- [x] `arch/arm32/cpu/mod.rs`
+- [x] `arch/arm32/mod.rs`
+- [x] `arch/mod.rs` (添加 arm32 模块导出)
+
+**代码统计：**
+- 新增文件: 4 个
+- 总代码量: ~1,300 行
+
+**Commit:** (待提交)
 
 #### 3.4.4 CP14 协处理器仿真 (ARMv7)
 
