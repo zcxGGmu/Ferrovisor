@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.3 (MMU 配置和地址转换已完成) |
-| **状态** | 实施阶段 2 |
+| **版本** | v2.4 (GIC/VGIC 中断控制器已完成) |
+| **状态** | 实施阶段 3 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -46,6 +46,40 @@
 **代码统计:**
 - 新增/修改文件: 3 个
 - 总代码量: ~1,140 行
+
+**Commit:** (待提交)
+
+---
+
+#### 阶段 2.3: GIC/VGIC 中断控制器 (2025-12-27)
+- [x] `arch/arm64/interrupt/gic.rs` - GIC 驱动实现 (688 行)
+  - GIC 版本枚举 (V1, V2, V3, V4)
+  - GICD (Distributor) 寄存器偏移定义
+  - GICC (CPU Interface) 寄存器偏移定义
+  - GICH (Hypervisor Interface) 寄存器偏移定义
+  - GICR (Redistributor) 寄存器偏移定义 (GICv3)
+  - ICC 系统寄存器定义 (GICv3)
+  - GicDistributor 结构体 (enable, disable, enable_irq, disable_irq, set_priority, set_config, generate_sgi)
+  - GicCpuInterface 结构体 (enable, disable, set_priority_mask, acknowledge_interrupt, end_of_interrupt)
+  - GicHypInterface 结构体 (enable, read_vtr, get_num_lr, read_lr, write_lr)
+  - GicDevice 主设备结构体
+  - 全局 GIC 实例管理 (init, get, get_expect)
+- [x] `arch/arm64/interrupt/vgic.rs` - VGIC 虚拟 GIC 实现 (695 行)
+  - VgicModel 枚举 (V2, V3)
+  - VgicLr 结构体 (虚拟中断 List Register)
+  - VgicLrFlags bitflags (STATE_PENDING, STATE_ACTIVE, HW, EOI_INT, GROUP1)
+  - VgicHwState/VgicHwStateV2 结构体 (硬件状态保存)
+  - VgicVcpuState 结构体 (LR 管理, IRQ->LR 映射)
+  - VgicGuestState 结构体 (Guest 状态管理)
+  - VgicOps trait (save_state, restore_state, set_lr, get_lr, clear_lr 等)
+  - VgicV2Ops 实现 (GICv2 特定操作)
+  - VgicDevice 结构体 (inject_irq, save_vcpu_context, restore_vcpu_context)
+  - 全局 VGIC 实例管理
+- [x] `arch/arm64/interrupt/mod.rs` - 更新模块导出
+
+**代码统计:**
+- 新增/修改文件: 2 个
+- 总代码量: ~1,380 行
 
 **Commit:** (待提交)
 
@@ -859,23 +893,30 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 
 #### 3.3.1 GIC 基础支持
 
+> **状态更新 (2025-12-27):** ✅ 已完成 GIC 驱动框架和 VGIC 虚拟化支持
+
 **任务：**
-- [ ] 实现 GICv2 驱动 (`drivers/irqchip/arm_gicv2.rs`)
+- [x] 实现 GICv2/v3 驱动 (`arch/arm64/interrupt/gic.rs`)
   - GICD (Distributor) 管理
     - GICD_CTLR, GICD_TYPER, GICD_ISENABLER, GICD_ICENABLER
     - GICD_ISPENDR, GICD_ICPENDR
-    - GICD_IPRIORITYR, GICD_ITARGETSR
-  - GICC (CPU Interface) 管理
+    - GICD_IPRIORITYR, GICD_ITARGETSR, GICD_ICFGR
+    - GICD_SGIR (Software Generated Interrupt)
+  - GICC (CPU Interface) 管理 (GICv2)
     - GICC_CTLR, GICC_PMR, GICC_BPR, GICC_IAR, GICC_EOIR
+    - GICC_HPPIR, GICC_RPR, GICC_DIR
+  - GICH (Hypervisor Interface) 管理
+    - GICH_HCR, GICH_VTR, GICH_VMCR, GICH_LR
+    - List Register 管理
+  - GICR (Redistributor) 定义 (GICv3)
+    - GICR_WAKER, GICR_PROPBASER, GICR_PENDBASER
+  - ICC 系统寄存器定义 (GICv3)
+    - ICC_IAR0_EL1, ICC_IAR1_EL1, ICC_EOIR0_EL1, ICC_EOIR1_EL1
   - 中断使能/禁用
   - 中断优先级配置
-- [ ] 实现 GICv3 驱动 (`drivers/irqchip/arm_gicv3.rs`)
-  - GICD (Distributor) 管理
-  - GICR (Redistributor) 管理
-    - GICR_WAKER, GICR_PROPBASER, GICR_PENDBASER
-  - ARE (Affinity Routing Enable) 支持
-  - ICC 系统寄存器接口
-- [ ] 实现 GIC 发现 (`arch/arm64/interrupt/gic_discovery.rs`)
+  - 中断目标配置
+  - 软件中断生成 (SGI)
+- [ ] GIC 发现和设备树解析 (TODO)
   - 设备树解析
   - 版本检测
   - IRQ 数量检测
@@ -888,27 +929,30 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 - `xvisor/arch/arm/cpu/arm64/include/arch_gicv3.h`
 
 **交付物：**
-- `drivers/irqchip/arm_gicv2.rs`
-- `drivers/irqchip/arm_gicv3.rs`
-- `arch/arm64/interrupt/gic_discovery.rs`
+- [x] `arch/arm64/interrupt/gic.rs` (688 行)
+- [ ] `arch/arm64/interrupt/gic_discovery.rs` (TODO)
 
 #### 3.3.2 VGIC (虚拟 GIC) 实现
 
+> **状态更新 (2025-12-27):** ✅ 已完成 VGIC 框架和 GICv2 虚拟化支持
+
 **任务：**
-- [ ] 实现 VGIC 框架 (`arch/arm64/interrupt/vgic/mod.rs`)
-  - VGIC 状态管理
-  - List Register (LR) 管理
-- [ ] 实现 VGIC v2 (`arch/arm64/interrupt/vgic/vgicv2.rs`)
-  - 虚拟 CPU 接口仿真
-  - 中断注入到 Guest
-  - LR 寄存器管理
-- [ ] 实现 VGIC v3 (`arch/arm64/interrupt/vgic/vgicv3.rs`)
+- [x] 实现 VGIC 框架 (`arch/arm64/interrupt/vgic.rs`)
+  - VGIC 状态管理 (VgicGuestState)
+  - List Register (LR) 管理 (VgicVcpuState)
+  - VgicOps trait 定义
+- [x] 实现 VGIC v2 (`arch/arm64/interrupt/vgic.rs`)
+  - 虚拟 CPU 接口仿真 (VgicV2Ops)
+  - 中断注入到 Guest (inject_irq)
+  - LR 寄存器管理 (set_lr, get_lr, clear_lr)
+  - VCPU 上下文保存/恢复 (save_vcpu_context, restore_vcpu_context)
+- [ ] 实现 VGIC v3 (TODO)
   - 虚拟 Redistributor
   - ICC 系统寄存器仿真
     - ICC_IAR1_EL1, ICC_EOIR1_EL1
     - ICC_IGRPEN0_EL1, ICC_IGRPEN1_EL1
   - INTID 范围扩展支持
-- [ ] 实现 VGIC 中断路由 (`arch/arm64/interrupt/vgic/routing.rs`)
+- [ ] 实现 VGIC 中断路由 (TODO)
   - SGI (0-15) 路由
   - PPI (16-31) 路由
   - SPI (32-1019) 路由
@@ -922,46 +966,44 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 **VGIC 数据结构映射:**
 ```rust
 pub struct VgicGuestState {
-    pub guest: GuestRef,
-    pub id: [u8; 8],
-    pub num_cpu: u32,
-    pub num_irq: u32,
-    pub vcpu_states: [VgicVcpuState; VGIC_MAX_NCPU],
-    pub dist_lock: SpinLock,
-    pub enabled: u32,
-    pub irq_states: [VgicIrqState; VGIC_MAX_NIRQ],
-    pub sgi_sources: [[u32; 16]; VGIC_MAX_NCPU],
-    pub irq_targets: [u32; VGIC_MAX_NIRQ],
-    pub priorities: [[u32; 32]; VGIC_MAX_NCPU],
-    pub priority2: [u32; VGIC_MAX_NIRQ - 32],
-    pub irq_enabled: [[u32; VGIC_MAX_NIRQ / 32]; VGIC_MAX_NCPU],
-    pub irq_pending: [[u32; VGIC_MAX_NIRQ / 32]; VGIC_MAX_NCPU],
+    pub num_vcpus: u32,
+    pub num_irqs: u32,
+    pub vcpu_states: Vec<VgicVcpuState>,
+    pub enabled: bool,
+    pub version: GicVersion,
 }
 
-pub const VGIC_MAX_NCPU: usize = 8;
-pub const VGIC_MAX_NIRQ: usize = 256;
-pub const VGIC_MAX_LRS: usize = 4;  // GICv2
+pub struct VgicVcpuState {
+    pub parent_irq: u32,
+    pub hw: VgicHwState,
+    pub lr_used_count: u32,
+    pub lr_used: [u32; ...],
+    pub irq_lr: [u8; VGIC_MAX_NIRQ],
+}
+
+pub const VGIC_MAX_NCPU: u32 = 8;
+pub const VGIC_MAX_NIRQ: u32 = 256;
+pub const VGIC_MAX_LRS: usize = 16;
 ```
 
 **交付物：**
-- `arch/arm64/interrupt/vgic/mod.rs`
-- `arch/arm64/interrupt/vgic/vgicv2.rs`
-- `arch/arm64/interrupt/vgic/vgicv3.rs`
-- `arch/arm64/interrupt/vgic/routing.rs`
+- [x] `arch/arm64/interrupt/vgic.rs` (695 行)
+- [ ] `arch/arm64/interrupt/vgic/vgicv3.rs` (TODO)
+- [ ] `arch/arm64/interrupt/vgic/routing.rs` (TODO)
 
 #### 3.3.3 虚拟中断处理
 
 **任务：**
-- [ ] 实现虚拟中断注入 (`arch/arm64/interrupt/virq.rs`)
+- [ ] 实现虚拟中断注入 (`arch/arm64/interrupt/virq.rs`) (TODO)
   - 设置 VGIC LR
   - HCR_EL2.VI/VF 位管理
   - 中断优先级处理
-- [ ] 实现虚拟中断 EOI 处理
-- [ ] 实现中断委托 (HIDELEG)
+- [ ] 实现虚拟中断 EOI 处理 (TODO)
+- [ ] 实现中断委托 (HIDELEG) (TODO)
 
 **交付物：**
-- `arch/arm64/interrupt/virq.rs`
-- `arch/arm64/interrupt/mod.rs`
+- [ ] `arch/arm64/interrupt/virq.rs` (待实现)
+- [x] `arch/arm64/interrupt/mod.rs` (已更新导出)
 
 ---
 

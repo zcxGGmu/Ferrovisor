@@ -11,6 +11,17 @@ pub mod vgic;
 /// Virtual interrupt handling
 pub mod virq;
 
+// Re-export commonly used types
+pub use gic::{
+    GicVersion, GicDistributor, GicCpuInterface, GicHypInterface, GicDevice,
+    gicd, gicc, gich, gicr, icc,
+};
+pub use vgic::{
+    VgicModel, VgicLr, VgicLrFlags, VgicHwState, VgicHwStateV2,
+    VgicVcpuState, VgicGuestState, VgicOps, VgicV2Ops, VgicDevice,
+    VGIC_MAX_NCPU, VGIC_MAX_NIRQ, VGIC_MAX_LRS, VGIC_LR_UNKNOWN,
+};
+
 /// Initialize interrupt handling
 pub fn init() -> Result<(), &'static str> {
     log::info!("Initializing ARM64 interrupt controller");
