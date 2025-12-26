@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.4 (WFI/WFE 处理已完成) |
-| **状态** | 实施阶段 6 |
+| **版本** | v3.5 (SMP 启动已完成) |
+| **状态** | 实施阶段 7 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -1662,18 +1662,18 @@ pub const PSCI_RET_ALREADY_ON: u32 = -4;
 
 ### 阶段 7：SMP 支持 (Week 23-24)
 
-#### 3.7.1 SMP 启动
+#### 3.7.1 SMP 启动 (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 SMP 框架 (`arch/arm64/smp/mod.rs`)
-- [ ] 实现 Spin Table 启动 (`arch/arm64/smp/spin_table.rs`)
+- [x] 实现 SMP 框架 (`arch/arm64/smp/mod.rs`) (~490 行)
+- [x] 实现 Spin Table 启动 (`arch/arm64/smp/spin_table.rs`) (~460 行)
   - 从设备树读取 spin table 地址
   - 写入启动入口点和 CPU ID
-- [ ] 实现 PSCI 启动 (`arch/arm64/smp/psci_boot.rs`)
+- [x] 实现 PSCI 启动 (`arch/arm64/smp/psci.rs`) (~370 行)
   - 使用 PSCI CPU_ON 启动从 CPU
 - [ ] 实现 SCU 启动 (`arch/arm64/smp/scu.rs`) (ARMv7)
-  - Snoop Control Unit 初始化
-- [ ] 实现 SMP 初始化 (`arch/arm64/smp/init.rs`)
+  - Snoop Control Unit 初始化 (暂未实现，ARM64 可选)
+- [x] 实现 SMP 初始化 (`arch/arm64/smp/init.rs`) (~380 行)
   - 从 CPU 启动流程
   - CPU 同步机制
 
@@ -1685,22 +1685,87 @@ pub const PSCI_RET_ALREADY_ON: u32 = -4;
 - `xvisor/arch/arm/cpu/common/smp_imx.c` (5.6KB)
 - `xvisor/arch/arm/board/common/include/smp_ops.h`
 
-**SMP 操作函数:**
+**SMP 操作接口:**
 ```rust
 pub trait SmpOps {
-    fn cpu_start(cpu_id: u32, entry_addr: usize, arg: usize) -> Result;
-    fn cpu_stop(cpu_id: u32) -> Result;
-    fn cpu_on(cpu_id: u32) -> bool;
-    fn cpu_offline(cpu_id: u32) -> bool;
+    fn name(&self) -> &str;
+    fn ops_init(&mut self) -> Result<(), &'static str>;
+    fn cpu_init(&mut self, logical_id: u32, mpidr: u64) -> Result<(), &'static str>;
+    fn cpu_prepare(&mut self, logical_id: u32) -> Result<bool, &'static str>;
+    fn cpu_boot(&mut self, logical_id: u32, entry_point: u64, context_id: u64) -> Result<(), &'static str>;
+    fn cpu_postboot(&mut self, logical_id: u32) -> Result<(), &'static str>;
 }
 ```
 
+**实现细节:**
+- `arch/arm64/smp/mod.rs` (~490 行)
+  - CpuState 枚举 (Offline, Booting, Online, Suspending, Suspended)
+  - CpuInfo 结构体 (CPU 信息跟踪)
+  - SmpOps trait (SMP 操作接口)
+  - SmpManager (SMP 管理器)
+    - register_cpu() - 注册 CPU
+    - set_enable_method() - 设置启动方法
+    - cpu_boot() - 启动 CPU
+    - mark_cpu_online() - 标记 CPU 在线
+  - 全局 SMP 管理器 (manager, manager_mut)
+  - current_cpu_id() - 获取当前 CPU ID
+  - is_smp() - 检查是否为 SMP 模式
+
+- `arch/arm64/smp/psci.rs` (~370 行)
+  - PsciSmpOps 结构体 (PSCI SMP 操作)
+  - SmpOps trait 实现
+    - ops_init() - PSCI 初始化和版本查询
+    - cpu_init() - CPU 初始化和状态查询
+    - cpu_prepare() - CPU 启动前准备
+    - cpu_boot() - 使用 PSCI_CPU_ON 启动 CPU
+    - cpu_postboot() - 启动后处理
+  - psci_cpu_on() - 调用 PSCI CPU_ON
+  - psci_affinity_info() - 查询 CPU 亲和性信息
+  - set_secondary_entry_point() - 设置次级 CPU 入口点
+  - cpu_status() - 查询 CPU 状态
+
+- `arch/arm64/smp/spin_table.rs` (~460 行)
+  - SpinTableEntry 结构体 (内存中的 spin table 条目)
+  - SpinTableConfig 结构体 (spin table 配置)
+  - SpinTableSmpOps 结构体 (Spin table SMP 操作)
+  - SmpOps trait 实现
+    - ops_init() - Spin table 初始化
+    - cpu_init() - CPU 配置验证
+    - cpu_prepare() - 写入 clear/release 地址
+    - cpu_boot() - 写入入口点并发送 SEV
+    - cpu_postboot() - 启动后处理
+  - configure_cpu() - 从设备树配置 CPU
+  - set_secondary_entry_point() - 设置次级 CPU 入口点
+  - write_spin_table_entry() - 写入 spin table 条目
+
+- `arch/arm64/smp/init.rs` (~380 行)
+  - SmpInitResult 枚举 (初始化结果)
+  - CpuTopology 结构体 (CPU 拓扑信息)
+  - SmpInitContext 结构体 (初始化上下文)
+  - Pen release 机制 (write_pen_release/read_pen_release)
+  - secondary_entry() - 次级 CPU 入口点 (裸函数)
+  - secondary_init() - 次级 CPU 初始化
+  - secondary_idle() - 次级 CPU 空闲循环
+  - init_from_device_tree() - 从设备树初始化 SMP
+  - init_auto() - 自动检测 enable-method
+  - boot_cpu() - 启动指定 CPU
+  - wait_for_all_cpus() - 等待所有 CPU 在线
+  - is_boot_cpu() - 检查是否为启动 CPU
+
 **交付物：**
-- `arch/arm64/smp/mod.rs`
-- `arch/arm64/smp/spin_table.rs`
-- `arch/arm64/smp/psci_boot.rs`
-- `arch/arm64/smp/scu.rs`
-- `arch/arm64/smp/init.rs`
+- `arch/arm64/smp/mod.rs` (~490 行)
+- `arch/arm64/smp/spin_table.rs` (~460 行)
+- `arch/arm64/smp/psci.rs` (~370 行，已存在，更新)
+- `arch/arm64/smp/init.rs` (~380 行)
+
+**代码统计:**
+- 新增文件: 1 个 (init.rs)
+- 更新文件: 3 个 (mod.rs, psci.rs, spin_table.rs)
+- 总代码量: ~1,700 行
+
+**Commit:** (待提交)
+
+---
 
 #### 3.7.2 CPU Hotplug
 
