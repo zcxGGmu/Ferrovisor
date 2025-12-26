@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v2.6 (虚拟中断和系统寄存器模拟已完成) |
-| **状态** | 实施阶段 4 |
+| **版本** | v2.7 (VCPU 上下文切换已完成) |
+| **状态** | 实施阶段 3 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -155,7 +155,57 @@
 - 新增文件: 4 个
 - 总代码量: ~950+ 行
 
-**Commit:** (待提交)
+**Commit:** 427e800
+
+---
+
+#### 阶段 3.1.4: VCPU 上下文切换 (2025-12-27)
+- [x] `arch/arm64/cpu/vcpu/switch.S` - 汇编上下文切换实现 (~390 行)
+  - `__vcpu_sysregs_save` - 保存所有 EL1/EL0 系统寄存器
+    - 64位寄存器: sp_el0, sp_el1, elr_el1, spsr_el1, midr_el1, mpidr_el1
+    - 系统控制: sctlr_el1, actlr_el1, cpacr_el1, tcr_el1
+    - 内存管理: ttbr0_el1, ttbr1_el1, mair_el1
+    - 异常处理: esr_el1, far_el1, par_el1
+    - 上下文: vbar_el1, contextidr_el1, tpidr_el0/1, tpidrro_el0
+    - 32位寄存器: spsr_abt/und/irq/fiq, dacr32_el2, ifsr32_el2
+    - ThumbEE: teecr32_el1, teehbr32_el1 (条件保存)
+  - `__vcpu_sysregs_restore` - 恢复所有系统寄存器
+    - 更新 VPIDR_EL2 和 VMPIDR_EL2 虚拟化处理器 ID
+    - 恢复完整的 EL1/EL0 寄存器状态
+  - `__vcpu_vfp_save` - 保存 VFP/SIMD 状态
+    - 控制寄存器: fpexc32_el2, fpcr, fpsr
+    - 浮点寄存器: q0-q31 (32×128-bit = 512 字节)
+  - `__vcpu_vfp_restore` - 恢复 VFP/SIMD 状态
+    - 先恢复 q0-q31，再恢复控制寄存器
+  - `__vcpu_gprs_save` - 保存通用寄存器
+    - 保存 x1-x30 和原始 SP 到栈
+    - 从栈复制到 SavedGprs 结构
+  - `__vcpu_gprs_restore` - 恢复通用寄存器
+    - 从 SavedGprs 结构加载到 x1-x30
+    - 恢复 SP
+  - `__vcpu_switch_to_guest` - 主切换函数
+    - 保存主机 GPRs (x1-x30, sp)
+    - 加载客户机 GPRs
+    - 恢复客户机系统寄存器
+    - 恢复客户机 VFP 状态
+    - 加载客户机 PC (ELR_EL1) 和 PSTATE (SPSR_EL1)
+    - 执行 ERET 进入客户机 EL1
+- [x] `arch/arm64/cpu/vcpu/context.rs` - Rust 封装和类型定义 (376 行)
+  - SavedGprsOffsets - GPR 结构体偏移常量
+  - VcpuContextOffsets - VCPU 上下文偏移常量
+  - VfpRegs - VFP 寄存器状态 (528 字节，16 字节对齐)
+  - SavedGprs - 通用寄存器保存结构，提供 get/set 访问方法
+  - ExtendedVcpuContext - 扩展上下文 (VcpuContext + SysRegs + VfpRegs + SavedGprs)
+  - extern "C" 声明连接到汇编函数
+  - unsafe 包装函数: sysregs_save/restore, vfp_save/restore, gprs_save/restore, switch_to_guest
+- [x] `arch/arm64/cpu/vcpu/mod.rs` - VCPU 模块导出
+- [x] `arch/arm64/cpu/mod.rs` - 更新导出 (添加 vcpu 模块)
+
+**代码统计:**
+- 新增/修改文件: 4 个
+- 总代码量: ~800 行
+
+**Commit:** 427e800
 
 ---
 
