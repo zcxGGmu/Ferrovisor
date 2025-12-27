@@ -8,11 +8,13 @@
 //! - FPU/SIMD virtualization
 //! - WFI/WFE instruction handling
 //! - Assembly helpers
+//! - Entry point from assembly code
 
 pub mod regs;
 pub mod features;
 pub mod state;
 pub mod init;
+pub mod entry;
 
 /// System register emulation module
 pub mod sysreg;

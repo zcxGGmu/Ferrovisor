@@ -11,6 +11,9 @@ pub mod vgic;
 /// Virtual interrupt handling
 pub mod virq;
 
+/// Exception handlers (C-compatible ABI for assembly)
+pub mod handlers;
+
 // Re-export commonly used types
 pub use gic::{
     GicVersion, GicDistributor, GicCpuInterface, GicHypInterface, GicDevice,
@@ -26,6 +29,10 @@ pub use virq::{
     inject_virq, deassert_virq, virq_pending, execute_virq,
     eoi_interrupt, configure_interrupt_delegation,
     assert_virq, deassert_irq, get_irq_priority, vgic_available,
+};
+pub use handlers::{
+    ExceptionType, ExceptionContext, ExceptionHandler,
+    set_exception_handler,
 };
 
 /// Initialize interrupt handling

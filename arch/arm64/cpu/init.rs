@@ -8,6 +8,31 @@
 
 use crate::{ExceptionLevel, el2_regs};
 
+/// CPU initialization information
+///
+/// This structure is passed from assembly entry code to CPU init.
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct CpuInitInfo {
+    /// Logical CPU ID
+    pub cpu_id: u32,
+    /// MPIDR (Multiprocessor Affinity Register) value
+    pub mpidr: u64,
+    /// Is this the primary (boot) CPU?
+    pub is_primary: bool,
+}
+
+impl CpuInitInfo {
+    /// Create new CPU init info
+    pub fn new(cpu_id: u32, mpidr: u64, is_primary: bool) -> Self {
+        Self {
+            cpu_id,
+            mpidr,
+            is_primary,
+        }
+    }
+}
+
 /// HCR_EL2 (Hypervisor Configuration Register) bits
 pub mod hcr_el2 {
     /// VMID mask bits (VMID in VTTBR_EL2)
@@ -257,6 +282,43 @@ pub extern "C" fn cpu_init_early() {
     // This would typically be in assembly
 
     log::debug!("CPU early init complete");
+}
+
+/// Initialize CPU with given info
+///
+/// This function is called from Rust entry point (entry.rs)
+/// after assembly setup is complete.
+///
+/// # Parameters
+/// - `info`: CPU initialization information (ID, MPIDR, primary flag)
+pub fn cpu_init(info: CpuInitInfo) -> Result<(), &'static str> {
+    log::info!("Initializing CPU {} (MPIDR={:#x}, primary={})",
+               info.cpu_id, info.mpidr, info.is_primary);
+
+    // Detect CPU features first
+    super::features::detect();
+
+    // Check if we're at EL2
+    let el = super::super::current_exception_level();
+    log::info!("Current exception level: {:?}", el);
+
+    if el != ExceptionLevel::EL2 {
+        return Err("Not running at EL2");
+    }
+
+    // Initialize EL2 mode
+    unsafe {
+        init_el2_mode()?;
+    }
+
+    // Primary CPU specific initialization
+    if info.is_primary {
+        log::info!("Primary CPU initialization complete");
+    } else {
+        log::info!("Secondary CPU {} initialization complete", info.cpu_id);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
