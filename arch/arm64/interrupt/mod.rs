@@ -5,6 +5,9 @@
 /// GIC discovery and initialization
 pub mod gic;
 
+/// GIC device tree discovery
+pub mod gic_discovery;
+
 /// VGIC (Virtual GIC) implementation
 pub mod vgic;
 
@@ -18,6 +21,11 @@ pub mod handlers;
 pub use gic::{
     GicVersion, GicDistributor, GicCpuInterface, GicHypInterface, GicDevice,
     gicd, gicc, gich, gicr, icc,
+};
+pub use gic_discovery::{
+    GicDiscoveryConfig, GicInitializedInfo,
+    discover_and_init_gic, auto_init_gic, init_platform_gic,
+    init_qemu_virt_gic, init_foundation_v8_gic,
 };
 pub use vgic::{
     VgicModel, VgicLr, VgicLrFlags, VgicHwState, VgicHwStateV2,
