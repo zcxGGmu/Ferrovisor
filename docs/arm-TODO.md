@@ -959,10 +959,16 @@ struct vgic_vcpu_state {
   - [x] SavedVfpRegs
   - [x] ArmPrivContext
   - [x] VcpuContext
-- [ ] 实现上下文切换汇编 (`arch/arm64/cpu/vcpu/switch.S`)
-  - Host -> Guest 切换 (ERET 到 EL1)
-  - Guest -> Host 切换 (异常到 EL2)
-  - VCPU 状态保存/恢复
+- [x] 实现上下文切换汇编 (`arch/arm64/cpu/vcpu/switch.S`, ~515 行)
+  - [x] Host -> Guest 切换 (ERET 到 EL1)
+  - [x] Guest -> Host 切换 (异常到 EL2)
+  - [x] VCPU 状态保存/恢复
+  - [x] sysregs_regs_save/restore - EL1/EL0 系统寄存器
+  - [x] vfp_regs_save/restore - VFP/NEON 寄存器 (q0-q31)
+  - [x] gprs_save/restore - 通用寄存器 (x1-x30, sp)
+  - [x] ptrauth_regs_save/restore - 指针认证密钥 (ARMv8.3-PAuth)
+  - [x] timer_regs_save/restore - 通用定时器寄存器
+  - [x] switch_to_guest - 主切换函数
 - [x] 实现 Traps 处理 (`arch/arm64/cpu/vcpu/trap.rs`, ~614 行)
   - [x] TrapReason 枚举 (SysRegAccess, FpSimdTrap, WfiWfe, Stage2Fault, SmcCall 等)
   - [x] TrapInfo 结构 (ESR, FAR, ISS, IL, PC, SPSR)

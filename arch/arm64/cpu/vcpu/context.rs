@@ -247,6 +247,91 @@ extern "C" {
 
     /// Switch to guest VCPU (does ERET)
     fn __vcpu_switch_to_guest(context: *const VcpuContext);
+
+    /// Save pointer authentication keys (ARMv8.3-PAuth)
+    fn __vcpu_ptrauth_save(ptrauth: *mut u8);
+
+    /// Restore pointer authentication keys (ARMv8.3-PAuth)
+    fn __vcpu_ptrauth_restore(ptrauth: *const u8);
+
+    /// Save generic timer registers
+    fn __vcpu_timer_save(timer: *mut u8);
+
+    /// Restore generic timer registers
+    fn __vcpu_timer_restore(timer: *const u8);
+}
+
+// ============================================================================
+// PTRAUTH Register Save/Restore (ARMv8.3-PAuth)
+// ============================================================================
+
+/// Pointer authentication keys state (80 bytes)
+///
+/// Contains 5 key pairs (lo/hi), each 16 bytes:
+/// - APIA key (instruction authentication A)
+/// - APIB key (instruction authentication B)
+/// - APDA key (data authentication A)
+/// - APDB key (data authentication B)
+/// - APGA key (generic authentication)
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct PtrauthRegs {
+    /// APIA key (instruction authentication)
+    pub apia: [u64; 2],
+    /// APIB key
+    pub apib: [u64; 2],
+    /// APDA key (data authentication)
+    pub apda: [u64; 2],
+    /// APDB key
+    pub apdb: [u64; 2],
+    /// APGA key (generic authentication)
+    pub apga: [u64; 2],
+}
+
+impl Default for PtrauthRegs {
+    fn default() -> Self {
+        Self {
+            apia: [0; 2],
+            apib: [0; 2],
+            apda: [0; 2],
+            apdb: [0; 2],
+            apga: [0; 2],
+        }
+    }
+}
+
+/// Generic timer registers state (40 bytes)
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct TimerRegs {
+    /// Physical timer control
+    pub cntpctl: u32,
+    /// Virtual timer control
+    pub cntvctl: u32,
+    /// Timer control
+    pub cntkctl: u32,
+    /// Reserved
+    _reserved: u32,
+    /// Physical timer compare value
+    pub cntpcval: u64,
+    /// Virtual timer compare value
+    pub cntvcval: u64,
+    /// Virtual timer offset
+    pub cntvoff: u64,
+}
+
+impl Default for TimerRegs {
+    fn default() -> Self {
+        Self {
+            cntpctl: 0,
+            cntvctl: 0,
+            cntkctl: 0,
+            _reserved: 0,
+            cntpcval: 0,
+            cntvcval: 0,
+            cntvoff: 0,
+        }
+    }
 }
 
 /// Save VCPU system registers
@@ -335,6 +420,62 @@ pub unsafe fn gprs_restore(gprs: *const SavedGprs) {
 pub unsafe fn switch_to_guest(context: *const VcpuContext) -> ! {
     __vcpu_switch_to_guest(context);
     unreachable!("ERET to guest should never return");
+}
+
+// ============================================================================
+// PTRAUTH Save/Restore Wrapper Functions
+// ============================================================================
+
+/// Save pointer authentication keys
+///
+/// # Arguments
+/// * `ptrauth` - Mutable pointer to PTRAUTH state
+///
+/// # Safety
+/// Must be called from EL2, requires ARMv8.3-PAuth or later
+#[inline]
+pub unsafe fn ptrauth_save(ptrauth: *mut PtrauthRegs) {
+    __vcpu_ptrauth_save(ptrauth as *mut u8);
+}
+
+/// Restore pointer authentication keys
+///
+/// # Arguments
+/// * `ptrauth` - Pointer to PTRAUTH state
+///
+/// # Safety
+/// Must be called from EL2, requires ARMv8.3-PAuth or later
+#[inline]
+pub unsafe fn ptrauth_restore(ptrauth: *const PtrauthRegs) {
+    __vcpu_ptrauth_restore(ptrauth as *const u8);
+}
+
+// ============================================================================
+// Timer Save/Restore Wrapper Functions
+// ============================================================================
+
+/// Save generic timer registers
+///
+/// # Arguments
+/// * `timer` - Mutable pointer to timer state
+///
+/// # Safety
+/// Must be called from EL2
+#[inline]
+pub unsafe fn timer_save(timer: *mut TimerRegs) {
+    __vcpu_timer_save(timer as *mut u8);
+}
+
+/// Restore generic timer registers
+///
+/// # Arguments
+/// * `timer` - Pointer to timer state
+///
+/// # Safety
+/// Must be called from EL2
+#[inline]
+pub unsafe fn timer_restore(timer: *const TimerRegs) {
+    __vcpu_timer_restore(timer as *const u8);
 }
 
 /// Initialize VCPU context switching

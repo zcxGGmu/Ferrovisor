@@ -12,10 +12,13 @@ pub mod trap;
 pub use context::{
     SavedGprs, SavedGprsOffsets, VcpuContextOffsets,
     VfpRegs, ExtendedVcpuContext,
+    PtrauthRegs, TimerRegs,
     sysregs_save, sysregs_restore,
     vfp_save, vfp_restore,
     gprs_save, gprs_restore,
     switch_to_guest,
+    ptrauth_save, ptrauth_restore,
+    timer_save, timer_restore,
 };
 
 pub use trap::{

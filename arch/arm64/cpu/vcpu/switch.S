@@ -386,3 +386,129 @@ __vcpu_switch_to_guest:
 
 	// Should not reach here
 	b	.
+
+// ============================================================================
+// Pointer Authentication Register Save/Restore (ARMv8.3-PAuth)
+// ============================================================================
+
+.global __vcpu_ptrauth_save
+__vcpu_ptrauth_save:
+	// x0 = pointer to PtrauthRegs structure
+	// Save APIA key (instruction authentication)
+	stp	x1, x2, [sp, #-16]!
+	mrs_s	x1, SYS_APIAKEYLO_EL1
+	mrs_s	x2, SYS_APIAKEYHI_EL1
+	stp	x1, x2, [x0, #0x00]
+
+	// Save APIB key
+	mrs_s	x1, SYS_APIBKEYLO_EL1
+	mrs_s	x2, SYS_APIBKEYHI_EL1
+	stp	x1, x2, [x0, #0x10]
+
+	// Save APDA key (data authentication)
+	mrs_s	x1, SYS_APDAKEYLO_EL1
+	mrs_s	x2, SYS_APDAKEYHI_EL1
+	stp	x1, x2, [x0, #0x20]
+
+	// Save APDB key
+	mrs_s	x1, SYS_APDBKEYLO_EL1
+	mrs_s	x2, SYS_APDBKEYHI_EL1
+	stp	x1, x2, [x0, #0x30]
+
+	// Save APGA key (generic authentication)
+	mrs_s	x1, SYS_APGAKEYLO_EL1
+	mrs_s	x2, SYS_APGAKEYHI_EL1
+	stp	x1, x2, [x0, #0x40]
+
+	ldp	x1, x2, [sp], #16
+	ret
+
+.global __vcpu_ptrauth_restore
+__vcpu_ptrauth_restore:
+	// x0 = pointer to PtrauthRegs structure
+	stp	x1, x2, [sp, #-16]!
+
+	// Restore APIA key
+	ldp	x1, x2, [x0, #0x00]
+	msr_s	SYS_APIAKEYLO_EL1, x1
+	msr_s	SYS_APIAKEYHI_EL1, x2
+
+	// Restore APIB key
+	ldp	x1, x2, [x0, #0x10]
+	msr_s	SYS_APIBKEYLO_EL1, x1
+	msr_s	SYS_APIBKEYHI_EL1, x2
+
+	// Restore APDA key
+	ldp	x1, x2, [x0, #0x20]
+	msr_s	SYS_APDAKEYLO_EL1, x1
+	msr_s	SYS_APDAKEYHI_EL1, x2
+
+	// Restore APDB key
+	ldp	x1, x2, [x0, #0x30]
+	msr_s	SYS_APDBKEYLO_EL1, x1
+	msr_s	SYS_APDBKEYHI_EL1, x2
+
+	// Restore APGA key
+	ldp	x1, x2, [x0, #0x40]
+	msr_s	SYS_APGAKEYLO_EL1, x1
+	msr_s	SYS_APGAKEYHI_EL1, x2
+
+	ldp	x1, x2, [sp], #16
+	ret
+
+// ============================================================================
+// Generic Timer Register Save/Restore
+// ============================================================================
+
+.global __vcpu_timer_save
+__vcpu_timer_save:
+	// x0 = pointer to TimerRegs structure
+	stp	x1, x2, [sp, #-16]!
+
+	// Save timer control and value registers
+	mrs	x1, cntp_ctl_el0
+	str	w1, [x0, #0x00]		// cntpctl
+	mrs	x1, cntv_ctl_el0
+	str	w1, [x0, #0x04]		// cntvctl
+	mrs	x1, cntkctl_el1
+	str	w1, [x0, #0x08]		// cntkctl
+	mrs	x1, cntp_cval_el0
+	str	x1, [x0, #0x10]		// cntpcval
+	mrs	x1, cntv_cval_el0
+	str	x1, [x0, #0x18]		// cntvcval
+	mrs	x1, cntvoff_el2
+	str	x1, [x0, #0x20]		// cntvoff
+
+	// Disable timers
+	mov	w1, #0x1
+	msr	cnpv_ctl_el0, x1		// disable physical timer
+	msr	cnv_ctl_el0, x1		// disable virtual timer
+
+	ldp	x1, x2, [sp], #16
+	ret
+
+.global __vcpu_timer_restore
+__vcpu_timer_restore:
+	// x0 = pointer to TimerRegs structure
+	stp	x1, x2, [sp, #-16]!
+
+	// Restore virtual timer offset first
+	ldr	x1, [x0, #0x20]
+	msr	cntvoff_el2, x1		// cntvoff
+
+	// Restore timer compare values
+	ldr	x1, [x0, #0x10]
+	msr	cntp_cval_el0, x1		// cntpcval
+	ldr	x1, [x0, #0x18]
+	msr	cnv_cval_el0, x1		// cntvcval
+
+	// Restore timer control registers
+	ldr	w1, [x0, #0x08]
+	msr	cntkctl_el1, x1		// cntkctl
+	ldr	w1, [x0, #0x00]
+	msr	cntp_ctl_el0, x1		// cntpctl
+	ldr	w1, [x0, #0x04]
+	msr	cnv_ctl_el0, x1		// cntvctl
+
+	ldp	x1, x2, [sp], #16
+	ret
