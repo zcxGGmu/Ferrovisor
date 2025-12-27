@@ -47,7 +47,7 @@
 - 新增/修改文件: 3 个
 - 总代码量: ~1,140 行
 
-**Commit:** (待提交)
+**Commit:** f3961cd (包含 VTCR, MAIR, 地址转换实现)
 
 ---
 
@@ -81,7 +81,7 @@
 - 新增/修改文件: 2 个
 - 总代码量: ~1,380 行
 
-**Commit:** (待提交)
+**Commit:** 17ed1eb (包含 GICv3 实现), c2581a4 (包含中断路由)
 
 ---
 
@@ -104,7 +104,7 @@
 - 新增/修改文件: 1 个
 - 总代码量: ~470 行
 
-**Commit:** (待提交)
+**Commit:** e06e554 (文档更新，实现包含在 c2581a4)
 
 ---
 
@@ -1097,18 +1097,34 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 
 #### 3.2.3 与共享 MMU 框架集成
 
+> **状态更新 (2025-12-27):** ✅ 已完成 GStage 集成和 Stage-2 缺页处理
+
 **任务：**
-- [ ] 实现 GStage trait for ARM (`arch/arm64/mmu/gstage.rs`)
-  - 类似 RISC-V 的 GStageManager
-  - 与 `core/mm/gstage.rs` 集成
-- [ ] 实现 Stage-2 缺页处理 (`arch/arm64/mmu/fault.rs`)
-  - IPA fault 处理
-  - Permission fault 处理
+- [x] 实现 GStage trait for ARM (`arch/arm64/mmu/gstage.rs`)
+  - GStageMode 枚举 (4KB/16KB/64KB 粒度，40-52 位 IPA)
+  - GStageCapabilities - 硬件能力检测
+  - GStageContext - 每个 VM 的翻译上下文
+  - GStageManager - 多 VM 上下文管理
+- [x] 实现 Stage-2 缺页处理 (`arch/arm64/mmu/fault.rs`)
+  - Stage2Fault 枚举 (Translation, AccessFlag, Permission, AddressSize)
+  - FaultInfo 结构 - 缺页信息解析
+  - handle_stage2_fault() - 处理 Stage-2 缺页
+  - handle_translation_fault() - 翻译缺页处理
+  - handle_permission_fault() - 权限缺页处理
+
+**参考文件：**
+- `xvisor/arch/arm/cpu/common/mmu_lpae.c`
 
 **交付物：**
-- `arch/arm64/mmu/gstage.rs`
-- `arch/arm64/mmu/fault.rs`
-- `arch/arm64/mmu/mod.rs`
+- [x] `arch/arm64/mmu/gstage.rs` (~680 行)
+- [x] `arch/arm64/mmu/fault.rs` (~360 行)
+- [x] `arch/arm64/mmu/mod.rs` (更新导出)
+
+**代码统计:**
+- 新增/修改文件: 3 个
+- 总代码量: ~1,040 行
+
+**Commit:** f8f6311
 
 ---
 
@@ -1372,11 +1388,9 @@ pub const VGIC_MAX_LRS: usize = 16;
   - `vgic_available()` - 检查 VGIC 是否可用
   - `assert_virq()` / `deassert_irq()` - 中断断言/取消断言接口
   - 单元测试 (~70 行)
-- [ ] 实现虚拟中断 EOI 处理 (TODO)
-- [ ] 实现中断委托 (HIDELEG) (TODO)
 
 **交付物：**
-- [ ] `arch/arm64/interrupt/virq.rs` (待实现)
+- [x] `arch/arm64/interrupt/virq.rs` (470 行)
 - [x] `arch/arm64/interrupt/mod.rs` (已更新导出)
 
 ---
@@ -1385,15 +1399,17 @@ pub const VGIC_MAX_LRS: usize = 16;
 
 #### 3.4.1 系统寄存器仿真框架
 
+> **状态更新 (2025-12-27):** ✅ 已完成
+
 **任务：**
-- [ ] 实现系统寄存器 trap 处理 (`arch/arm64/cpu/sysreg/trap.rs`)
+- [x] 实现系统寄存器 trap 处理 (`arch/arm64/cpu/sysreg/trap.rs`, ~300 行)
   - HSTR_EL2 trap 处理
   - CPTR_EL2 trap 处理 (TCPAC, TFP, TTA)
   - 系统寄存器访问解码
-- [ ] 实现系统寄存器读写分发器 (`arch/arm64/cpu/sysreg/dispatch.rs`)
+- [x] 实现系统寄存器读写分发器 (`arch/arm64/cpu/sysreg/dispatch.rs`, ~400 行)
   - Op0, Op1, CRn, CRm, Op2 解码
   - 寄存器访问路由
-- [ ] 实现保存的寄存器状态 (`arch/arm64/cpu/sysreg/state.rs`)
+- [x] 实现保存的寄存器状态 (`arch/arm64/cpu/sysreg/state.rs`, ~250 行)
   - 每个 VCPU 的系统寄存器状态
 
 **参考文件：**
@@ -1401,10 +1417,16 @@ pub const VGIC_MAX_LRS: usize = 16;
 - `xvisor/arch/arm/cpu/arm64/include/cpu_vcpu_sysregs.h`
 
 **交付物：**
-- `arch/arm64/cpu/sysreg/mod.rs`
-- `arch/arm64/cpu/sysreg/trap.rs`
-- `arch/arm64/cpu/sysreg/dispatch.rs`
-- `arch/arm64/cpu/sysreg/state.rs`
+- [x] `arch/arm64/cpu/sysreg/mod.rs`
+- [x] `arch/arm64/cpu/sysreg/trap.rs`
+- [x] `arch/arm64/cpu/sysreg/dispatch.rs`
+- [x] `arch/arm64/cpu/sysreg/state.rs`
+
+**代码统计:**
+- 新增文件: 4 个
+- 总代码量: ~950+ 行
+
+**Commit:** 427e800
 
 #### 3.4.2 关键系统寄存器实现 (2025-12-27)
 
@@ -1836,7 +1858,7 @@ pub const PSCI_RET_ALREADY_ON: u32 = -4;
 - 新增文件: 2 个
 - 总代码量: ~1,200 行
 
-**Commit:** (待提交)
+**Commit:** 900b792
 
 ---
 
@@ -1943,7 +1965,7 @@ pub trait SmpOps {
 - 更新文件: 3 个 (mod.rs, psci.rs, spin_table.rs)
 - 总代码量: ~1,700 行
 
-**Commit:** (待提交)
+**Commit:** 3a1d93e (SMP 启动), 01f1ee7 (CPU Hotplug)
 
 ---
 
@@ -1985,7 +2007,7 @@ pub trait SmpOps {
 - 修改文件: 1 个
 - 总代码量: ~450 行
 
-**Commit:** (待提交)
+**Commit:** 01f1ee7
 
 ---
 
@@ -2060,7 +2082,7 @@ pub trait SmpOps {
 - 新增文件: 4 个
 - 总代码量: ~1,450 行
 
-**Commit:** (待提交)
+**Commit:** 5c7d23f
 
 ---
 
@@ -2272,7 +2294,7 @@ pub const CNTFRQ_EL0: u32;     // Counter Frequency Register
 - 新增/修改文件: 3 个
 - 总代码量: ~715 行
 
-**Commit:** (待提交)
+**Commit:** 9e8bb67
 
 ---
 
