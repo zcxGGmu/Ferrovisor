@@ -4,7 +4,8 @@
 //! Reference: ARM IHI 0069D (GIC architecture specification)
 //! Reference: xvisor/arch/arm/cpu/common/vgic.c, vgic_v2.c
 
-use crate::arch::arm64::interrupt::gic::{self, GicDevice, GicVersion};
+use crate::arch::arm64::interrupt::gic::{self, GicDevice, GicVersion, Gicv3SysRegs};
+use crate::arch::arm64::interrupt::gic::ich;
 
 /// Maximum number of VCPUs supported
 pub const VGIC_MAX_NCPU: u32 = 8;
@@ -73,6 +74,8 @@ impl Default for VgicLr {
 pub struct VgicHwState {
     /// GICv2 specific state
     pub v2: VgicHwStateV2,
+    /// GICv3 specific state
+    pub v3: VgicHwStateV3,
 }
 
 /// GICv2 hardware state
@@ -86,6 +89,23 @@ pub struct VgicHwStateV2 {
     pub apr: u32,
     /// List registers
     pub lr: [u32; VGIC_MAX_LRS],
+}
+
+/// GICv3 hardware state
+#[derive(Debug, Clone, Copy, Default)]
+pub struct VgicHwStateV3 {
+    /// Hypervisor Control Register (ICH_HCR_EL2)
+    pub hcr: u64,
+    /// Virtual Machine Control Register (ICH_VMCR_EL2)
+    pub vmcr: u64,
+    /// Active Priorities Registers (Group 0) - ICH_AP0R[0-3]_EL2
+    pub ap0r: [u64; 4],
+    /// Active Priorities Registers (Group 1) - ICH_AP1R[0-3]_EL2
+    pub ap1r: [u64; 4],
+    /// List registers (ICH_LR[0-15]_EL2)
+    pub lr: [u64; VGIC_MAX_LRS],
+    /// Number of priority bits
+    pub pri_bits: u32,
 }
 
 /// Per-VCPU VGIC state
@@ -396,6 +416,196 @@ impl VgicOps for VgicV2Ops {
     }
 }
 
+/// GICv3 VGIC operations
+///
+/// Uses system registers (ICH_*) instead of memory-mapped registers for
+/// virtual interrupt control.
+pub struct VgicV3Ops {
+    lr_cnt: u32,
+    pri_bits: u32,
+}
+
+impl VgicV3Ops {
+    /// Create new GICv3 ops
+    pub fn new(_gic: &GicDevice) -> Option<Self> {
+        // Read VTR to get LR count and priority bits
+        let vtr = unsafe { Gicv3SysRegs::read_vtr_el2() };
+
+        let lr_cnt = ((vtr & ich::VTR_NR_LR_MASK) >> ich::VTR_NR_LR_SHIFT) as u32 + 1;
+        let pri_bits = ((vtr & ich::VTR_PRIO_BITS_MASK) >> ich::VTR_PRIO_BITS_SHIFT) as u32 + 1;
+
+        Some(Self {
+            lr_cnt,
+            pri_bits,
+        })
+    }
+
+    /// Get number of AP registers based on priority bits
+    fn num_ap_regs(&self) -> u32 {
+        match self.pri_bits {
+            0..=5 => 1,
+            6 => 2,
+            7 => 4,
+            _ => 1,
+        }
+    }
+}
+
+impl VgicOps for VgicV3Ops {
+    fn reset_state(&self, state: &mut VgicHwState, _model: VgicModel) {
+        state.v3.hcr = ich::HCR_EN;
+        state.v3.vmcr = 0;
+        state.v3.ap0r = [0; 4];
+        state.v3.ap1r = [0; 4];
+        for i in 0..self.lr_cnt as usize {
+            state.v3.lr[i] = 0;
+        }
+        state.v3.pri_bits = self.pri_bits;
+    }
+
+    fn save_state(&self, state: &mut VgicHwState, _model: VgicModel) {
+        // Save all hypervisor interface state
+        state.v3.hcr = unsafe { Gicv3SysRegs::read_hcr_el2() };
+        state.v3.vmcr = unsafe { Gicv3SysRegs::read_vmcr_el2() };
+
+        // Disable HCR during save
+        unsafe { Gicv3SysRegs::write_hcr_el2(0) };
+
+        // Save active priorities
+        let num_ap = self.num_ap_regs() as usize;
+        for i in 0..num_ap {
+            state.v3.ap0r[i] = unsafe { Gicv3SysRegs::read_ap0r_el2(i as u32) };
+            state.v3.ap1r[i] = unsafe { Gicv3SysRegs::read_ap1r_el2(i as u32) };
+        }
+
+        // Save list registers
+        for i in 0..self.lr_cnt as usize {
+            state.v3.lr[i] = unsafe { Gicv3SysRegs::read_lr_el2(i as u32) };
+        }
+    }
+
+    fn restore_state(&self, state: &VgicHwState, _model: VgicModel) {
+        // Restore active priorities
+        let num_ap = self.num_ap_regs() as usize;
+        for i in 0..num_ap {
+            unsafe { Gicv3SysRegs::write_ap0r_el2(i as u32, state.v3.ap0r[i]) };
+            unsafe { Gicv3SysRegs::write_ap1r_el2(i as u32, state.v3.ap1r[i]) };
+        }
+
+        // Restore list registers
+        for i in 0..self.lr_cnt as usize {
+            unsafe { Gicv3SysRegs::write_lr_el2(i as u32, state.v3.lr[i]) };
+        }
+
+        // Restore VMCR and HCR
+        unsafe { Gicv3SysRegs::write_vmcr_el2(state.v3.vmcr) };
+        unsafe { Gicv3SysRegs::write_hcr_el2(state.v3.hcr) };
+    }
+
+    fn check_underflow(&self) -> bool {
+        let misr = unsafe { Gicv3SysRegs::read_misr_el2() };
+        (misr & ich::HCR_UIE) != 0
+    }
+
+    fn enable_underflow(&self) {
+        let hcr = unsafe { Gicv3SysRegs::read_hcr_el2() };
+        unsafe { Gicv3SysRegs::write_hcr_el2(hcr | ich::HCR_UIE) };
+    }
+
+    fn disable_underflow(&self) {
+        let hcr = unsafe { Gicv3SysRegs::read_hcr_el2() };
+        unsafe { Gicv3SysRegs::write_hcr_el2(hcr & !ich::HCR_UIE) };
+    }
+
+    fn read_elrsr(&self, elrsr: &mut [u32; 2]) {
+        // Read empty list register status
+        // Note: ICH_ELSR_EL2 is 64-bit on GICv3
+        let elsr_val = unsafe {
+            let mut value: u64;
+            core::arch::asm!(
+                "mrs {x}, ICH_ELSR_EL2",
+                x = out(reg) value,
+            );
+            value
+        };
+        elrsr[0] = (elsr_val & 0xFFFFFFFF) as u32;
+        elrsr[1] = ((elsr_val >> 32) & 0xFFFFFFFF) as u32;
+    }
+
+    fn read_eisr(&self, eisr: &mut [u32; 2]) {
+        // Read EOI status
+        // Note: ICH_EISR_EL2 is 64-bit on GICv3
+        let eisr_val = unsafe {
+            let mut value: u64;
+            core::arch::asm!(
+                "mrs {x}, ICH_EISR_EL2",
+                x = out(reg) value,
+            );
+            value
+        };
+        eisr[0] = (eisr_val & 0xFFFFFFFF) as u32;
+        eisr[1] = ((eisr_val >> 32) & 0xFFFFFFFF) as u32;
+    }
+
+    fn set_lr(&self, lr: usize, lrv: &VgicLr, _model: VgicModel) {
+        let mut lrval: u64 = 0;
+
+        // Virtual interrupt ID (0-23 bits for GICv3)
+        lrval |= (lrv.virtid as u64) & ich::LR_VIRTUAL_ID_MASK;
+
+        // Physical interrupt ID (for HW interrupts)
+        if lrv.flags.contains(VgicLrFlags::HW) {
+            lrval |= ich::LR_HW;
+            lrval |= ((lrv.physid as u64) << ich::LR_PHYS_ID_SHIFT) & ich::LR_PHYS_ID_MASK;
+        }
+
+        // Priority
+        lrval |= ((lrv.prio as u64) << ich::LR_PRIORITY_SHIFT) & ich::LR_PRIORITY_MASK;
+
+        // State
+        if lrv.flags.contains(VgicLrFlags::STATE_PENDING) {
+            lrval |= ich::LR_STATE_PENDING;
+        }
+        if lrv.flags.contains(VgicLrFlags::STATE_ACTIVE) {
+            lrval |= ich::LR_STATE_ACTIVE;
+        }
+        if lrv.flags.contains(VgicLrFlags::EOI_INT) {
+            // EOI interrupt (special encoding)
+        }
+
+        // Group 1 interrupt (GICv3 defaults to Group 1)
+        lrval |= ich::LR_GROUP;
+
+        unsafe { Gicv3SysRegs::write_lr_el2(lr as u32, lrval) };
+    }
+
+    fn get_lr(&self, lr: usize, lrv: &mut VgicLr, _model: VgicModel) {
+        let lrval = unsafe { Gicv3SysRegs::read_lr_el2(lr as u32) };
+
+        lrv.virtid = (lrval & ich::LR_VIRTUAL_ID_MASK) as u16;
+        lrv.physid = ((lrval & ich::LR_PHYS_ID_MASK) >> ich::LR_PHYS_ID_SHIFT) as u16;
+        lrv.prio = ((lrval & ich::LR_PRIORITY_MASK) >> ich::LR_PRIORITY_SHIFT) as u8;
+        lrv.flags = VgicLrFlags::empty();
+
+        if lrval & ich::LR_STATE_PENDING != 0 {
+            lrv.flags |= VgicLrFlags::STATE_PENDING;
+        }
+        if lrval & ich::LR_STATE_ACTIVE != 0 {
+            lrv.flags |= VgicLrFlags::STATE_ACTIVE;
+        }
+        if lrval & ich::LR_HW != 0 {
+            lrv.flags |= VgicLrFlags::HW;
+        }
+        if lrval & ich::LR_GROUP != 0 {
+            lrv.flags |= VgicLrFlags::GROUP1;
+        }
+    }
+
+    fn clear_lr(&self, lr: usize) {
+        unsafe { Gicv3SysRegs::write_lr_el2(lr as u32, 0) };
+    }
+}
+
 /// VGIC device
 #[derive(Debug)]
 pub struct VgicDevice {
@@ -416,13 +626,26 @@ unsafe impl Sync for VgicDevice {}
 impl VgicDevice {
     /// Create new VGIC device
     pub fn new(gic: &'static GicDevice) -> Self {
-        let lr_cnt = gic.hyp_interface()
-            .map(|h| h.get_num_lr())
-            .unwrap_or(4);
-
-        let ops = match gic.distributor().get_version() {
-            GicVersion::V2 => VgicV2Ops::new(gic).map(|o| Box::new(o) as Box<dyn VgicOps>),
-            _ => None,
+        let (ops, lr_cnt) = match gic.distributor().get_version() {
+            GicVersion::V2 => {
+                let lr_cnt = gic.hyp_interface()
+                    .map(|h| h.get_num_lr())
+                    .unwrap_or(4);
+                let ops = VgicV2Ops::new(gic).map(|o| Box::new(o) as Box<dyn VgicOps>);
+                (ops, lr_cnt)
+            }
+            GicVersion::V3 | GicVersion::V4 => {
+                // GICv3/V4 uses system registers, try to create V3 ops
+                if let Some(ops) = VgicV3Ops::new(gic) {
+                    // VgicV3Ops knows its lr_count from VTR
+                    let lr_cnt = ops.lr_cnt;
+                    (Some(Box::new(ops) as Box<dyn VgicOps>), lr_cnt)
+                } else {
+                    // Fallback
+                    (None, 4)
+                }
+            }
+            _ => (None, 4),
         };
 
         Self {

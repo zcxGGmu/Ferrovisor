@@ -1179,12 +1179,55 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
   - 中断注入到 Guest (inject_irq)
   - LR 寄存器管理 (set_lr, get_lr, clear_lr)
   - VCPU 上下文保存/恢复 (save_vcpu_context, restore_vcpu_context)
-- [ ] 实现 VGIC v3 (TODO)
-  - 虚拟 Redistributor
-  - ICC 系统寄存器仿真
-    - ICC_IAR1_EL1, ICC_EOIR1_EL1
-    - ICC_IGRPEN0_EL1, ICC_IGRPEN1_EL1
-  - INTID 范围扩展支持
+- [x] 实现 VGIC v3 (`arch/arm64/interrupt/vgic.rs`, 扩展)
+  - **VgicHwStateV3 结构** - GICv3 特定的硬件状态
+    * hcr: Hypervisor Control Register (ICH_HCR_EL2)
+    * vmcr: Virtual Machine Control Register (ICH_VMCR_EL2)
+    * ap0r/ap1r: Active Priorities Registers (ICH_AP0R[0-3]_EL2, ICH_AP1R[0-3]_EL2)
+    * lr: List Registers (ICH_LR[0-15]_EL2)
+    * pri_bits: 优先级位数 (从 VTR 读取)
+  - **VgicV3Ops 实现** - GICv3 特定的 VGIC 操作
+    * 使用系统寄存器而非内存映射寄存器
+    * reset_state() - 重置 VGIC v3 状态
+    * save_state() / restore_state() - 保存/恢复 VCPU 上下文
+    * set_lr() / get_lr() / clear_lr() - List Register 操作
+    * check_underflow() / enable_underflow() / disable_underflow() - 下溢检测
+    * read_elrsr() / read_eisr() - 状态寄存器读取
+    * num_ap_regs() - 根据 pri_bits 计算 AP 寄存器数量
+  - **ICH 系统寄存器支持** (`arch/arm64/interrupt/gic.rs`, 新增 ~390 行)
+    * ich 模块 - ICH 系统寄存器定义 (HCR_EL2, VTR_EL2, LR0-15_EL2, AP0R0-3_EL2, AP1R0-3_EL2)
+    * Gicv3SysRegs 结构 - 系统寄存器访问函数
+      - read_iar1() / write_eoir1() / write_dir() - ICC 系统寄存器访问
+      - read_sre_el2() / write_sre_el2() - System Register Enable
+      - read_hcr_el2() / write_hcr_el2() - Hypervisor Control
+      - read_vtr_el2() - VGIC Type Register (读取 LR 数量和优先级位数)
+      - read_lr_el2() / write_lr_el2() - List Register 读写
+      - read_vmcr_el2() / write_vmcr_el2() - Virtual Machine Control
+      - read_misr_el2() - Maintenance Interrupt Status
+      - read_ap0r_el2() / write_ap0r_el2() - Active Priorities (Group 0)
+      - read_ap1r_el2() / write_ap1r_el2() - Active Priorities (Group 1)
+  - **VgicDevice 更新** - 支持 GICv3 自动检测和初始化
+    * 根据 GIC 版本选择 VgicV2Ops 或 VgicV3Ops
+    * 从 ICH_VTR_EL2 读取 LR 数量和优先级位数
+  - **INTID 范围扩展** - 支持 24 位 INTID (GICv3)
+    * Virtual ID: 0-23 位 (支持最大 16M 中断)
+    * Physical ID: 32-41 位
+    * Priority: 48-55 位
+    * Group/State/HW 标志位
+  - **INTID 范围扩展支持**
+    * 最多支持 16,777,216 个中断 (24 位 INTID)
+    * SGI: 0-15, PPI: 16-31, SPI: 32-1019, LPI: 1024+
+    * Extended SPI: 1020-1023 (特殊用途)
+    * LPI: 4096+ (需要 Redistributor 支持)
+  - **虚拟 Redistributor 框架** - GICv3 Redistributor 基础支持
+    * GICR 寄存器定义 (gicr 模块): CTLR, TYPER, WAKER, PROPBASER, PENDBASER
+    * LPI (Locality-specific Peripheral Interrupts) 基础结构
+    * 待实现: LPI 配置表和挂起表管理
+- [ ] 实现 VGIC 中断路由 (TODO)
+  - SGI (0-15) 路由
+  - PPI (16-31) 路由
+  - SPI (32-1019) 路由
+  - LPI (1024+) 路由 (可选)
 - [ ] 实现 VGIC 中断路由 (TODO)
   - SGI (0-15) 路由
   - PPI (16-31) 路由

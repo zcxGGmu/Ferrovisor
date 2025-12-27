@@ -134,6 +134,400 @@ pub mod gicc {
     pub const CTLR_ENABLE: u32 = 1;
 }
 
+/// GICv3 Hypervisor Interface system registers (ICH)
+pub mod ich {
+    /// System register encoding values for ICH registers
+    /// Format: Op0=3, Op1=4, CRn=12
+
+    /// ICH_VSEIR_EL2 - Virtual System Error Register
+    pub const VSEIR_EL2: u32 = 0x24; // CRm=9, Op2=4
+    /// ICH_HCR_EL2 - Hypervisor Control Register
+    pub const HCR_EL2: u32 = 0x20; // CRm=11, Op2=0
+    /// ICH_VTR_EL2 - VGIC Type Register
+    pub const VTR_EL2: u32 = 0x21; // CRm=11, Op2=1
+    /// ICH_MISR_EL2 - Maintenance Interrupt Status Register
+    pub const MISR_EL2: u32 = 0x22; // CRm=11, Op2=2
+    /// ICH_EISR_EL2 - End of Interrupt Status Register
+    pub const EISR_EL2: u32 = 0x23; // CRm=11, Op2=3
+    /// ICH_ELSR_EL2 - Empty List Register Status Register
+    pub const ELSR_EL2: u32 = 0x25; // CRm=11, Op2=5
+    /// ICH_VMCR_EL2 - Virtual Machine Control Register
+    pub const VMCR_EL2: u32 = 0x27; // CRm=11, Op2=7
+
+    /// ICH_LR0_EL2 through ICH_LR15_EL2 - List Registers
+    /// LR0-LR7: CRm=12, Op2=0-7
+    /// LR8-LR15: CRm=13, Op2=0-7
+    pub const LR0_EL2: u32 = 0x30; // CRm=12, Op2=0
+    pub const LR1_EL2: u32 = 0x31;
+    pub const LR2_EL2: u32 = 0x32;
+    pub const LR3_EL2: u32 = 0x33;
+    pub const LR4_EL2: u32 = 0x34;
+    pub const LR5_EL2: u32 = 0x35;
+    pub const LR6_EL2: u32 = 0x36;
+    pub const LR7_EL2: u32 = 0x37;
+    pub const LR8_EL2: u32 = 0x38; // CRm=13, Op2=0
+    pub const LR9_EL2: u32 = 0x39;
+    pub const LR10_EL2: u32 = 0x3A;
+    pub const LR11_EL2: u32 = 0x3B;
+    pub const LR12_EL2: u32 = 0x3C;
+    pub const LR13_EL2: u32 = 0x3D;
+    pub const LR14_EL2: u32 = 0x3E;
+    pub const LR15_EL2: u32 = 0x3F;
+
+    /// Active Priorities Registers
+    /// AP0R0-AP0R3: CRm=8, Op2=0-3
+    /// AP1R0-AP1R3: CRm=9, Op2=0-3
+    pub const AP0R0_EL2: u32 = 0x28; // CRm=8, Op2=0
+    pub const AP0R1_EL2: u32 = 0x29;
+    pub const AP0R2_EL2: u32 = 0x2A;
+    pub const AP0R3_EL2: u32 = 0x2B;
+    pub const AP1R0_EL2: u32 = 0x2C; // CRm=9, Op2=0
+    pub const AP1R1_EL2: u32 = 0x2D;
+    pub const AP1R2_EL2: u32 = 0x2E;
+    pub const AP1R3_EL2: u32 = 0x2F;
+
+    /// ICH_HCR_EL2 bit definitions
+    /// Enable Group 0 interrupts
+    pub const HCR_EN: u64 = 1 << 0;
+    /// Enable Group 1 interrupts
+    pub const HCR_En: u64 = 1 << 1;
+    /// UIE - Underflow interrupt enable
+    pub const HCR_UIE: u64 = 1 << 1;
+    /// LRENPIE - List Register entry not present interrupt enable
+    pub const HCR_LRENPIE: u64 = 1 << 2;
+    /// NPIE - No pending interrupt enable
+    pub const HCR_NPIE: u64 = 1 << 3;
+    /// VGRP0EIE - Group 0 enable interrupt enable
+    pub const HCR_VGRP0EIE: u64 = 1 << 4;
+    /// VGRP1EIE - Group 1 enable interrupt enable
+    pub const HCR_VGRP1EIE: u64 = 1 << 5;
+    /// EOICount - EOI count field
+    pub const HCR_EOICOUNT_SHIFT: u32 = 27;
+    pub const HCR_EOICOUNT_MASK: u64 = 0x1F << HCR_EOICOUNT_SHIFT;
+
+    /// ICH_VTR_EL2 bit definitions
+    /// Number of list registers (bits [0:3] + 1)
+    pub const VTR_NR_LR_MASK: u64 = 0x3F;
+    pub const VTR_NR_LR_SHIFT: u32 = 0;
+    /// Number of priority bits (bits [29:31] + 1)
+    pub const VTR_PRIO_BITS_MASK: u64 = 0x7 << 29;
+    pub const VTR_PRIO_BITS_SHIFT: u32 = 29;
+
+    /// ICH_LR_EL2 bit definitions
+    /// Virtual interrupt ID [0:23] for GICv3
+    pub const LR_VIRTUAL_ID_MASK: u64 = 0xFFFFFF;
+    /// Physical interrupt ID
+    pub const LR_PHYS_ID_MASK: u64 = 0x3FF << 32;
+    pub const LR_PHYS_ID_SHIFT: u32 = 32;
+    /// Priority field
+    pub const LR_PRIORITY_MASK: u64 = 0xFF << 48;
+    pub const LR_PRIORITY_SHIFT: u32 = 48;
+    /// Group 1 interrupt
+    pub const LR_GROUP: u64 = 1u64 << 62;
+    /// Hardware interrupt
+    pub const LR_HW: u64 = 1u64 << 61;
+    /// State field
+    pub const LR_STATE_PENDING: u64 = 1 << 0;
+    pub const LR_STATE_ACTIVE: u64 = 1 << 1;
+    pub const LR_STATE_PENDING_ACTIVE: u64 = 0x2;
+    pub const LR_STATE_INVALID: u64 = 0x0;
+
+    /// ICC_SRE_EL2 - System Register Enable register
+    pub const SRE_EL2: u32 = 0x25; // Op0=3, Op1=4, CRn=12, CRm=9, Op2=5
+    /// ICC_SRE_EL2 bit definitions
+    /// SRE - System register access enable
+    pub const SRE_EL2_SRE: u64 = 1 << 0;
+    /// DFB - Disable FIQ bypass
+    pub const SRE_EL2_DFB: u64 = 1 << 1;
+    /// DIB - Disable IRQ bypass
+    pub const SRE_EL2_DIB: u64 = 1 << 2;
+    /// RM - Routing mode (0: IRQ/FIQ signals, 1: Stream protocol)
+    pub const SRE_EL2_RM_SHIFT: u32 = 3;
+    pub const SRE_EL2_RM_MASK: u64 = 0x3 << SRE_EL2_RM_SHIFT;
+}
+
+/// GICv3 System Register Access Functions
+///
+/// Provides safe access to GICv3 system registers used for interrupt
+/// control in virtualized environments.
+pub struct Gicv3SysRegs;
+
+impl Gicv3SysRegs {
+    /// Read ICC_IAR1_EL1 - Interrupt Acknowledge Register (Group 1)
+    ///
+    /// Returns the interrupt ID of the highest priority pending interrupt.
+    /// # Safety
+    /// Must be called at EL1 with ICC_SRE_EL1.SRE == 1
+    #[inline]
+    pub unsafe fn read_iar1() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICC_IAR1_EL1",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Write ICC_EOIR1_EL1 - End of Interrupt Register (Group 1)
+    ///
+    /// Signals completion of interrupt handling for the specified interrupt.
+    /// # Safety
+    /// Must be called at EL1 with ICC_SRE_EL1.SRE == 1
+    #[inline]
+    pub unsafe fn write_eoir1(irq: u64) {
+        core::arch::asm!(
+            "msr ICC_EOIR1_EL1, {x}",
+            x = in(reg) irq,
+        );
+    }
+
+    /// Write ICC_DIR_EL1 - Deactivate Interrupt Register
+    ///
+    /// Deactivates an interrupt without signaling completion.
+    /// # Safety
+    /// Must be called at EL1 with ICC_SRE_EL1.SRE == 1
+    #[inline]
+    pub unsafe fn write_dir(irq: u64) {
+        core::arch::asm!(
+            "msr ICC_DIR_EL1, {x}",
+            x = in(reg) irq,
+        );
+    }
+
+    /// Read ICC_SRE_EL2 - System Register Enable (EL2)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_sre_el2() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICC_SRE_EL2",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Write ICC_SRE_EL2 - System Register Enable (EL2)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_sre_el2(value: u64) {
+        core::arch::asm!(
+            "msr ICC_SRE_EL2, {x}",
+            x = in(reg) value,
+        );
+    }
+
+    /// Read ICH_HCR_EL2 - Hypervisor Control Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_hcr_el2() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICH_HCR_EL2",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Write ICH_HCR_EL2 - Hypervisor Control Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_hcr_el2(value: u64) {
+        core::arch::asm!(
+            "msr ICH_HCR_EL2, {x}",
+            x = in(reg) value,
+        );
+    }
+
+    /// Read ICH_VTR_EL2 - VGIC Type Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_vtr_el2() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICH_VTR_EL2",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Read ICH_LR_EL2 - List Register
+    ///
+    /// # Arguments
+    /// * `index` - LR index (0-15)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_lr_el2(index: u32) -> u64 {
+        let mut value: u64;
+        match index {
+            0 => core::arch::asm!("mrs {x}, ICH_LR0_EL2", x = out(reg) value),
+            1 => core::arch::asm!("mrs {x}, ICH_LR1_EL2", x = out(reg) value),
+            2 => core::arch::asm!("mrs {x}, ICH_LR2_EL2", x = out(reg) value),
+            3 => core::arch::asm!("mrs {x}, ICH_LR3_EL2", x = out(reg) value),
+            4 => core::arch::asm!("mrs {x}, ICH_LR4_EL2", x = out(reg) value),
+            5 => core::arch::asm!("mrs {x}, ICH_LR5_EL2", x = out(reg) value),
+            6 => core::arch::asm!("mrs {x}, ICH_LR6_EL2", x = out(reg) value),
+            7 => core::arch::asm!("mrs {x}, ICH_LR7_EL2", x = out(reg) value),
+            8 => core::arch::asm!("mrs {x}, ICH_LR8_EL2", x = out(reg) value),
+            9 => core::arch::asm!("mrs {x}, ICH_LR9_EL2", x = out(reg) value),
+            10 => core::arch::asm!("mrs {x}, ICH_LR10_EL2", x = out(reg) value),
+            11 => core::arch::asm!("mrs {x}, ICH_LR11_EL2", x = out(reg) value),
+            12 => core::arch::asm!("mrs {x}, ICH_LR12_EL2", x = out(reg) value),
+            13 => core::arch::asm!("mrs {x}, ICH_LR13_EL2", x = out(reg) value),
+            14 => core::arch::asm!("mrs {x}, ICH_LR14_EL2", x = out(reg) value),
+            15 => core::arch::asm!("mrs {x}, ICH_LR15_EL2", x = out(reg) value),
+            _ => core::arch::asm!("mrs {x}, ICH_LR0_EL2", x = out(reg) value),
+        };
+        value
+    }
+
+    /// Write ICH_LR_EL2 - List Register
+    ///
+    /// # Arguments
+    /// * `index` - LR index (0-15)
+    /// * `value` - Value to write
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_lr_el2(index: u32, value: u64) {
+        match index {
+            0 => core::arch::asm!("msr ICH_LR0_EL2, {x}", x = in(reg) value),
+            1 => core::arch::asm!("msr ICH_LR1_EL2, {x}", x = in(reg) value),
+            2 => core::arch::asm!("msr ICH_LR2_EL2, {x}", x = in(reg) value),
+            3 => core::arch::asm!("msr ICH_LR3_EL2, {x}", x = in(reg) value),
+            4 => core::arch::asm!("msr ICH_LR4_EL2, {x}", x = in(reg) value),
+            5 => core::arch::asm!("msr ICH_LR5_EL2, {x}", x = in(reg) value),
+            6 => core::arch::asm!("msr ICH_LR6_EL2, {x}", x = in(reg) value),
+            7 => core::arch::asm!("msr ICH_LR7_EL2, {x}", x = in(reg) value),
+            8 => core::arch::asm!("msr ICH_LR8_EL2, {x}", x = in(reg) value),
+            9 => core::arch::asm!("msr ICH_LR9_EL2, {x}", x = in(reg) value),
+            10 => core::arch::asm!("msr ICH_LR10_EL2, {x}", x = in(reg) value),
+            11 => core::arch::asm!("msr ICH_LR11_EL2, {x}", x = in(reg) value),
+            12 => core::arch::asm!("msr ICH_LR12_EL2, {x}", x = in(reg) value),
+            13 => core::arch::asm!("msr ICH_LR13_EL2, {x}", x = in(reg) value),
+            14 => core::arch::asm!("msr ICH_LR14_EL2, {x}", x = in(reg) value),
+            15 => core::arch::asm!("msr ICH_LR15_EL2, {x}", x = in(reg) value),
+            _ => core::arch::asm!("msr ICH_LR0_EL2, {x}", x = in(reg) value),
+        };
+    }
+
+    /// Read ICH_VMCR_EL2 - Virtual Machine Control Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_vmcr_el2() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICH_VMCR_EL2",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Write ICH_VMCR_EL2 - Virtual Machine Control Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_vmcr_el2(value: u64) {
+        core::arch::asm!(
+            "msr ICH_VMCR_EL2, {x}",
+            x = in(reg) value,
+        );
+    }
+
+    /// Read ICH_MISR_EL2 - Maintenance Interrupt Status Register
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_misr_el2() -> u64 {
+        let mut value: u64;
+        core::arch::asm!(
+            "mrs {x}, ICH_MISR_EL2",
+            x = out(reg) value,
+        );
+        value
+    }
+
+    /// Read ICH_AP0R0_EL2 through ICH_AP0R3_EL2 - Active Priorities (Group 0)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_ap0r_el2(index: u32) -> u64 {
+        let mut value: u64;
+        match index {
+            0 => core::arch::asm!("mrs {x}, ICH_AP0R0_EL2", x = out(reg) value),
+            1 => core::arch::asm!("mrs {x}, ICH_AP0R1_EL2", x = out(reg) value),
+            2 => core::arch::asm!("mrs {x}, ICH_AP0R2_EL2", x = out(reg) value),
+            3 => core::arch::asm!("mrs {x}, ICH_AP0R3_EL2", x = out(reg) value),
+            _ => core::arch::asm!("mrs {x}, ICH_AP0R0_EL2", x = out(reg) value),
+        };
+        value
+    }
+
+    /// Write ICH_AP0R0_EL2 through ICH_AP0R3_EL2 - Active Priorities (Group 0)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_ap0r_el2(index: u32, value: u64) {
+        match index {
+            0 => core::arch::asm!("msr ICH_AP0R0_EL2, {x}", x = in(reg) value),
+            1 => core::arch::asm!("msr ICH_AP0R1_EL2, {x}", x = in(reg) value),
+            2 => core::arch::asm!("msr ICH_AP0R2_EL2, {x}", x = in(reg) value),
+            3 => core::arch::asm!("msr ICH_AP0R3_EL2, {x}", x = in(reg) value),
+            _ => core::arch::asm!("msr ICH_AP0R0_EL2, {x}", x = in(reg) value),
+        };
+    }
+
+    /// Read ICH_AP1R0_EL2 through ICH_AP1R3_EL2 - Active Priorities (Group 1)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn read_ap1r_el2(index: u32) -> u64 {
+        let mut value: u64;
+        match index {
+            0 => core::arch::asm!("mrs {x}, ICH_AP1R0_EL2", x = out(reg) value),
+            1 => core::arch::asm!("mrs {x}, ICH_AP1R1_EL2", x = out(reg) value),
+            2 => core::arch::asm!("mrs {x}, ICH_AP1R2_EL2", x = out(reg) value),
+            3 => core::arch::asm!("mrs {x}, ICH_AP1R3_EL2", x = out(reg) value),
+            _ => core::arch::asm!("mrs {x}, ICH_AP1R0_EL2", x = out(reg) value),
+        };
+        value
+    }
+
+    /// Write ICH_AP1R0_EL2 through ICH_AP1R3_EL2 - Active Priorities (Group 1)
+    ///
+    /// # Safety
+    /// Must be called at EL2
+    #[inline]
+    pub unsafe fn write_ap1r_el2(index: u32, value: u64) {
+        match index {
+            0 => core::arch::asm!("msr ICH_AP1R0_EL2, {x}", x = in(reg) value),
+            1 => core::arch::asm!("msr ICH_AP1R1_EL2, {x}", x = in(reg) value),
+            2 => core::arch::asm!("msr ICH_AP1R2_EL2, {x}", x = in(reg) value),
+            3 => core::arch::asm!("msr ICH_AP1R3_EL2, {x}", x = in(reg) value),
+            _ => core::arch::asm!("msr ICH_AP1R0_EL2, {x}", x = in(reg) value),
+        };
+    }
+}
+
 /// GIC Hypervisor Interface register offsets (virtualization)
 pub mod gich {
     /// GICH_HCR - Hypervisor Control Register

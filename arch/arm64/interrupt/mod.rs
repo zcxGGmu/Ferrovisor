@@ -20,7 +20,8 @@ pub mod handlers;
 // Re-export commonly used types
 pub use gic::{
     GicVersion, GicDistributor, GicCpuInterface, GicHypInterface, GicDevice,
-    gicd, gicc, gich, gicr, icc,
+    Gicv3SysRegs,
+    gicd, gicc, gich, gicr, icc, ich,
 };
 pub use gic_discovery::{
     GicDiscoveryConfig, GicInitializedInfo,
@@ -28,8 +29,8 @@ pub use gic_discovery::{
     init_qemu_virt_gic, init_foundation_v8_gic,
 };
 pub use vgic::{
-    VgicModel, VgicLr, VgicLrFlags, VgicHwState, VgicHwStateV2,
-    VgicVcpuState, VgicGuestState, VgicOps, VgicV2Ops, VgicDevice,
+    VgicModel, VgicLr, VgicLrFlags, VgicHwState, VgicHwStateV2, VgicHwStateV3,
+    VgicVcpuState, VgicGuestState, VgicOps, VgicV2Ops, VgicV3Ops, VgicDevice,
     VGIC_MAX_NCPU, VGIC_MAX_NIRQ, VGIC_MAX_LRS, VGIC_LR_UNKNOWN,
 };
 pub use virq::{
