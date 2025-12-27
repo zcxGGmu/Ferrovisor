@@ -6,8 +6,8 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.9 (CPU Hotplug 已完成) |
-| **状态** | 实施阶段 9 |
+| **版本** | v4.0 (异常向量表和入口代码已完成) |
+| **状态** | 实施阶段 10 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
 ## 进度追踪
@@ -843,18 +843,26 @@ struct vgic_vcpu_state {
 #### 3.1.1 ARMv8 EL2 模式初始化
 
 **任务：**
-- [ ] 实现 EL2 入口代码 (`arch/arm64/cpu/entry.S`)
+- [x] 实现 EL2 入口代码 (`arch/arm64/cpu/entry.S`, ~240 行)
 - [x] 实现 CPU 初始化框架 (`arch/arm64/cpu/init.rs`)
   - [x] EL2 进入和配置框架
   - [x] HCR_EL2 寄存器位定义
   - [x] SCTLR_EL2 位定义
   - [x] VTCR_EL2 位定义
-  - [ ] 完整初始化流程 (TODO)
-- [ ] 实现异常向量表 (`arch/arm64/interrupt/vectors.S`)
-  - 同步异常
-  - IRQ 异常
-  - FIQ 异常
-  - SError 异常
+  - [x] CpuInitInfo 结构体
+  - [x] cpu_init() 函数
+- [x] 实现异常向量表 (`arch/arm64/interrupt/vectors.S`, ~360 行)
+  - [x] 同步异常
+  - [x] IRQ 异常
+  - [x] FIQ 异常
+  - [x] SError 异常
+- [x] 实现异常处理程序 (`arch/arm64/interrupt/handlers.rs`, ~380 行)
+  - [x] ExceptionType 枚举 (16 种异常类型)
+  - [x] ExceptionContext 结构体 (272 字节)
+  - [x] C 兼容处理函数
+- [x] 实现 Rust 入口代码 (`arch/arm64/cpu/entry.rs`, ~230 行)
+  - [x] rust_main() 主 CPU 入口
+  - [x] rust_secondary_main() 次 CPU 入口
 - [ ] 实现 EL2 到 EL1 降级 (可选 VHE)
 
 **参考文件：**
@@ -871,9 +879,18 @@ struct vgic_vcpu_state {
 6. 配置 MMU
 
 **交付物：**
-- [x] `arch/arm64/cpu/init.rs` (部分完成)
-- [ ] `arch/arm64/cpu/entry.S`
-- [ ] `arch/arm64/interrupt/vectors.S`
+- [x] `arch/arm64/cpu/init.rs` (已添加 CpuInitInfo, cpu_init)
+- [x] `arch/arm64/cpu/entry.S` (已完成)
+- [x] `arch/arm64/interrupt/vectors.S` (已完成)
+- [x] `arch/arm64/interrupt/handlers.rs` (已完成)
+- [x] `arch/arm64/cpu/entry.rs` (已完成)
+
+**代码统计:**
+- 新增文件: 4 个
+- 修改文件: 3 个
+- 总代码量: ~1,210 行
+
+**Commit:** 198dd29
 
 #### 3.1.2 ARMv7 HYP 模式初始化
 
