@@ -1223,11 +1223,64 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
     * GICR 寄存器定义 (gicr 模块): CTLR, TYPER, WAKER, PROPBASER, PENDBASER
     * LPI (Locality-specific Peripheral Interrupts) 基础结构
     * 待实现: LPI 配置表和挂起表管理
-- [ ] 实现 VGIC 中断路由 (TODO)
-  - SGI (0-15) 路由
-  - PPI (16-31) 路由
-  - SPI (32-1019) 路由
-  - LPI (1024+) 路由 (可选)
+- [x] 实现 VGIC 中断路由 (`arch/arm64/interrupt/routing.rs`, ~690 行)
+  - **IrqType 枚举** - 中断类型定义
+    * Sgi (0-15) - Software Generated Interrupt
+    * Ppi (16-31) - Private Peripheral Interrupt
+    * Spi (32-1019) - Shared Peripheral Interrupt
+    * Lpi (4096+) - Locality-specific Peripheral Interrupt
+    * is_per_cpu() / is_shared() - 类型检查方法
+  - **IrqState 结构** - 单个中断的状态
+    * active: CPU 激活状态位掩码
+    * level: 电平敏感状态位掩码
+    * model: 配置模型 (N:N 或 1:N)
+    * trigger: 触发类型 (电平/边沿)
+    * host_irq: 主机 IRQ 映射
+  - **DistributorState 结构** - 分发器状态
+    * max_vcpus/num_vcpus: 最大/实际 VCPU 数量
+    * irq_state[]: 每个中断的状态
+    * sgi_source[8][16]: SGI 源跟踪
+    * irq_target[]: 中断目标 CPU
+    * priority1[8][32]: SGI/PPI 优先级 (每 CPU)
+    * priority2[]: SPI 优先级
+    * irq_enabled[8][]: 中断使能状态 (每 CPU)
+    * irq_pending[8][]: 中断挂起状态 (每 CPU)
+  - **VgicRouting 结构** - VGIC 路由上下文
+    * dist: DistributorState 实例
+    * version: GIC 版本
+    * enable() / disable() / is_enabled() - 分发器控制
+  - **SGI 路由** (`route_sgi`)
+    * 跟踪 SGI 源 (sgi_source[cpu][sgi])
+    * 设置目标 CPU 的挂起状态
+    * 支持多目标 SGI 广播
+  - **PPI 路由** (`route_ppi`)
+    * 每个 CPU 私有中断
+    * 仅路由到指定 CPU
+  - **SPI 路由** (`route_spi`)
+    * 共享中断路由
+    * 支持多目标 CPU
+    * 使用 irq_target[] 配置目标
+  - **LPI 路由** (`route_lpi`)
+    * 基于 Redistributor 的路由
+    * 支持 4096+ 中断号
+    * 挂起状态管理
+  - **中断配置** (`configure_irq`)
+    * 设置目标 CPU
+    * 使能/禁能中断
+    * 配置优先级 (`set_irq_priority`)
+    * 配置触发类型 (`set_irq_trigger`)
+  - **主机 IRQ 映射** (`map_host_irq` / `get_host_irq`)
+    * 客户端 IRQ 到主机 IRQ 映射
+    * 支持硬件中断注入
+  - **状态管理** (`clear_irq_pending`)
+    * 清除挂起状态
+    * SGI 源清理
+  - **VCPU 查询** (`vcpu_has_pending` / `get_pending_irqs`)
+    * 检查 VCPU 是否有挂起中断
+    * 获取挂起中断位掩码
+  - **辅助函数** (`create_routing`)
+    * 创建路由上下文
+    * all_cpus_mask() - 获取所有 CPU 位掩码
 - [ ] 实现 VGIC 中断路由 (TODO)
   - SGI (0-15) 路由
   - PPI (16-31) 路由

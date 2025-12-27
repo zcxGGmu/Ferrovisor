@@ -11,6 +11,9 @@ pub mod gic_discovery;
 /// VGIC (Virtual GIC) implementation
 pub mod vgic;
 
+/// VGIC interrupt routing
+pub mod routing;
+
 /// Virtual interrupt handling
 pub mod virq;
 
@@ -32,6 +35,11 @@ pub use vgic::{
     VgicModel, VgicLr, VgicLrFlags, VgicHwState, VgicHwStateV2, VgicHwStateV3,
     VgicVcpuState, VgicGuestState, VgicOps, VgicV2Ops, VgicV3Ops, VgicDevice,
     VGIC_MAX_NCPU, VGIC_MAX_NIRQ, VGIC_MAX_LRS, VGIC_LR_UNKNOWN,
+};
+pub use routing::{
+    IrqType, IrqState, DistributorState, VgicRouting,
+    VGIC_MAX_SGI, VGIC_MAX_PPI, VGIC_MAX_SPI, VGIC_SPI_BASE, VGIC_LPI_BASE,
+    create_routing,
 };
 pub use virq::{
     VirtIrqType, IrqState, VirtInterrupt,
