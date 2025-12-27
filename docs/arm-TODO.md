@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v3.8 (平台支持已完成) |
+| **版本** | v3.9 (CPU Hotplug 已完成) |
 | **状态** | 实施阶段 9 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1767,15 +1767,45 @@ pub trait SmpOps {
 
 ---
 
-#### 3.7.2 CPU Hotplug
+#### 3.7.2 CPU Hotplug (已完成 2025-12-27)
 
 **任务：**
-- [ ] 实现 CPU 热插拔 (`arch/arm64/smp/hotplug.rs`)
+- [x] 实现 CPU 热插拔 (`arch/arm64/smp/hotplug.rs`, ~450 行)
   - CPU 在线/离线操作
   - CPU 通知机制
 
-**交付物：**
-- `arch/arm64/smp/hotplug.rs`
+**参考文件：**
+- `xvisor/arch/arm/cpu/common/smp_psci.c`
+- `xvisor/arch/arm/cpu/common/arm_psci.c`
+
+**实现细节:**
+- `arch/arm64/smp/hotplug.rs` (~450 行)
+  - HotplugState 枚举 (NotCapable, Offline, Onlining, Online, Offlining, OfflineFailed)
+  - HotplugEvent 枚举 (CpuOnline, CpuOffline, OnlineFailed, OfflineFailed)
+  - HotplugCallback trait (cpu_online, cpu_offline, cpu_online_failed, cpu_offline_failed)
+  - HotplugManager 结构体
+    - cpu_states: [HotplugState; MAX_CPUS]
+    - psci_ops: PsciSmpOps
+    - callbacks: Vec<&'static mut dyn HotplugCallback>
+    - online_mask / available_mask: u64
+    - cpu_online() - 使用 PSCI_CPU_ON 启动 CPU
+    - cpu_offline() - 使用 PSCI_CPU_OFF 关闭 CPU
+    - can_offline() - 检查 CPU 是否可离线
+    - notify() - 发送热插拔通知事件
+  - HotplugStats 结构体 (统计信息)
+  - SimpleHotplugCallback (简单回调实现)
+  - 全局管理器: manager() - 获取全局 hotplug 管理器
+  - init() - 初始化 CPU 热插拔
+- `arch/arm64/smp/mod.rs` (更新导出)
+  - 添加 `pub mod hotplug;` 声明
+  - 添加 `pub use hotplug::*;` 导出
+
+**代码统计:**
+- 新增文件: 1 个
+- 修改文件: 1 个
+- 总代码量: ~450 行
+
+**Commit:** (待提交)
 
 ---
 

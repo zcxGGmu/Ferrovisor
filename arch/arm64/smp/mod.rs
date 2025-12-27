@@ -22,12 +22,14 @@
 
 pub mod psci;
 pub mod spin_table;
+pub mod hotplug;
 
 pub mod init;
 
 // Re-export key types
 pub use psci::*;
 pub use spin_table::*;
+pub use hotplug::*;
 pub use init::*;
 
 /// Maximum number of CPUs supported
