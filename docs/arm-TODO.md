@@ -6,7 +6,7 @@
 |------|------|
 | **创建日期** | 2025-12-27 |
 | **更新日期** | 2025-12-27 |
-| **版本** | v4.0 (异常向量表和入口代码已完成) |
+| **版本** | v4.1 (GIC 发现已完成) |
 | **状态** | 实施阶段 10 |
 | **参考项目** | Xvisor (/home/zcxggmu/workspace/hello-projs/posp/xvisor) |
 
@@ -1127,10 +1127,14 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
   - 中断优先级配置
   - 中断目标配置
   - 软件中断生成 (SGI)
-- [ ] GIC 发现和设备树解析 (TODO)
-  - 设备树解析
-  - 版本检测
-  - IRQ 数量检测
+- [x] GIC 发现和设备树解析 (~400 行)
+  - [x] 设备树解析 (parse_gic_node)
+  - [x] 版本检测 (compatible 字符串)
+  - [x] IRQ 数量检测 (GICD_TYPER 或默认值)
+  - [x] discover_and_init_gic() - 自动发现并初始化
+  - [x] extract_gic_addresses() - 提取寄存器地址
+  - [x] init_qemu_virt_gic() - QEMU virt 平台
+  - [x] init_foundation_v8_gic() - Foundation v8 平台
 
 **参考文件：**
 - `xvisor/drivers/irqchip/irq-gic.c`
@@ -1141,7 +1145,13 @@ pub const TTBL_L3_BLOCK_SHIFT: u32 = 12;
 
 **交付物：**
 - [x] `arch/arm64/interrupt/gic.rs` (688 行)
-- [ ] `arch/arm64/interrupt/gic_discovery.rs` (TODO)
+- [x] `arch/arm64/interrupt/gic_discovery.rs` (~400 行)
+
+**代码统计:**
+- 新增文件: 1 个
+- 总代码量: ~400 行
+
+**Commit:** 2adfa53
 
 #### 3.3.2 VGIC (虚拟 GIC) 实现
 
