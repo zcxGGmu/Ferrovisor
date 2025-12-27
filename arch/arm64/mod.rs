@@ -33,6 +33,10 @@ pub mod psci;
 pub mod timer;
 pub mod devtree;
 
+// Include comprehensive unit tests
+#[cfg(test)]
+pub mod tests;
+
 // Re-export key types and functions
 pub use cpu::*;
 pub use mmu::*;
