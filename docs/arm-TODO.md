@@ -1323,10 +1323,55 @@ pub const VGIC_MAX_LRS: usize = 16;
 #### 3.3.3 虚拟中断处理
 
 **任务：**
-- [ ] 实现虚拟中断注入 (`arch/arm64/interrupt/virq.rs`) (TODO)
-  - 设置 VGIC LR
-  - HCR_EL2.VI/VF 位管理
-  - 中断优先级处理
+- [x] 实现虚拟中断注入 (`arch/arm64/interrupt/virq.rs`, ~470 行)
+  - **VirtIrqType 枚举** - 虚拟中断类型
+    * Reset, Undefined, Soft, PrefetchAbort, DataAbort, HypCall, External, ExternalFiq
+  - **IrqState 枚举** - 中断状态
+    * Inactive, Pending, Active, ActiveAndPending
+    * is_pending() / is_active() - 状态检查方法
+  - **VirtInterrupt 结构** - 虚拟中断描述符
+    * irq: 虚拟 IRQ 号
+    * phys_irq: 物理 IRQ 号 (Option)
+    * priority: 优先级 (0-255)
+    * state: IrqState
+    * irq_type: VirtIrqType
+  - **HCR_EL2.VI/VF 位管理** (hcr_el2 模块)
+    * VI: 虚拟 IRQ 中断
+    * VF: 虚拟 FIQ 中断
+    * IMO/FMO/AMO: 中断委托位
+  - **中断注入** (`inject_virq`)
+    * 通过 VGIC 注入 (使用 LR 寄存器)
+    * HCR_EL2.VI/VF 回退机制 (当 VGIC 不可用时)
+    * 支持硬件中断映射 (phys_irq)
+    * 中断优先级处理
+  - **中断取消** (`deassert_virq`)
+    * 清除 HCR_EL2.VI/VF 位
+  - **中断挂起检查** (`virq_pending`)
+    * 检查 VGIC MISR 寄存器
+    * 检查 HCR_EL2.VI/VF 位
+  - **中断执行** (`execute_virq`)
+    * 未定义指令异常注入
+    * 预取中止异常注入
+    * 数据中止异常注入
+    * 外部中断处理
+  - **中断优先级** (`get_irq_priority`)
+    * 返回中断优先级 (0-7)
+- [x] 实现虚拟中断 EOI 处理
+  - **EOI 处理** (`eoi_interrupt`)
+    * VGIC 自动处理 EOI
+    * HCR_EL2.VI/VF 回退清除
+- [x] 实现中断委托 (HIDELEG)
+  - **configure_interrupt_delegation()**
+    * IMO: 中断 IRQ 委托到 EL2
+    * FMO: 中断 FIQ 委托到 EL2
+    * AMO: 中断 SError 委托到 EL2
+  - 默认配置: IMO=1 (IRQ 委托到 EL2)
+  - HCR_EL2 寄存器读写
+- [x] 初始化函数
+  - `init()` - 检查 VGIC 可用性，配置默认中断委托
+  - `vgic_available()` - 检查 VGIC 是否可用
+  - `assert_virq()` / `deassert_irq()` - 中断断言/取消断言接口
+  - 单元测试 (~70 行)
 - [ ] 实现虚拟中断 EOI 处理 (TODO)
 - [ ] 实现中断委托 (HIDELEG) (TODO)
 
