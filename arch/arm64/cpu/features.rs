@@ -193,7 +193,7 @@ bitflags::bitflags! {
         const VA_BITS = 0b11 << 14;
         /// PMU (Performance Monitors) v3
         const PMU_V3 = 1 << 16;
-        /// Virtualization Host Extensions
+        /// Virtualization Host Extensions (ARMv8.1)
         const VHE = 1 << 17;
         /// TME (Transactional Memory Extension)
         const TME = 1 << 18;
@@ -201,11 +201,11 @@ bitflags::bitflags! {
         const RAS = 1 << 19;
         /// SVE2 (Scalable Vector Extension 2)
         const SVE2 = 1 << 20;
-        /// Pointer Authentication
+        /// Pointer Authentication (ARMv8.3)
         const PAUTH = 1 << 21;
-        /// Memory Tagging Extension
+        /// Memory Tagging Extension (ARMv8.5)
         const MTE = 1 << 22;
-        /// Activity Monitors
+        /// Activity Monitors (ARMv8.4)
         const AMU = 1 << 23;
         /// SME (Scalable Matrix Extension)
         const SME = 1 << 24;
@@ -213,12 +213,211 @@ bitflags::bitflags! {
         const EPAC = 1 << 25;
         /// Fault handling precise timing
         const FPAC = 1 << 26;
-        /// Enhanced virtualization traps
+        /// Enhanced virtualization traps (ARMv8.5)
         const E0PD = 1 << 27;
-        /// BTI (Branch Target Identification)
+        /// BTI (Branch Target Identification, ARMv8.5)
         const BTI = 1 << 28;
         /// Constant-time key for PAC
         const CONSTPAC = 1 << 29;
+        /// PAN (Privileged Access Never, ARMv8.1)
+        const PAN = 1 << 30;
+        /// UAO (User Access Override, ARMv8.2)
+        const UAO = 1 << 31;
+        /// SVB (SVE/FPR16 supports)
+        const SVB = 1 << 32;
+        /// CSV2 (Cache Speculation Variant 2)
+        const CSV2 = 1 << 33;
+        /// CSV3 (Cache Speculation Variant 3)
+        const CSV3 = 1 << 34;
+        /// DGH (Data Gathering Hint)
+        const DGH = 1 << 35;
+        /// ST (Full write in ST*W)
+        const ST = 1 << 36;
+        /// GTG (Guest Translation Granule)
+        const GTG = 1 << 37;
+        /// ECV (Enhanced Counter Virtualization)
+        const ECV = 1 << 38;
+        /// TTL (TLB Instruction Invalidate)
+        const TTL = 1 << 39;
+        /// LSB (Address Authenticates)
+        const LSB = 1 << 40;
+        /// AFP (Advanced Floating-point)
+        const AFP = 1 << 41;
+        /// DIT (Data Independent Timing)
+        const DIT = 1 << 42;
+        /// SPECRES (Speculation Restriction)
+        const SPECRES = 1 << 43;
+    }
+}
+
+/// ARMv8 architecture version
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ArchVersion {
+    /// ARMv8.0 - Base architecture
+    Armv8_0 = 0x80,
+    /// ARMv8.1 - VHE, PAN, PMU extensions
+    Armv8_1 = 0x81,
+    /// ARMv8.2 - UAO, SVE, PTM, DCPODP extensions
+    Armv8_2 = 0x82,
+    /// ARMv8.3 - PAUTH, SVE2, Nested Virtualization
+    Armv8_3 = 0x83,
+    /// ARMv8.4 - AMU, MPAM, SVE2, BTI extensions
+    Armv8_4 = 0x84,
+    /// ARMv8.5 - MTE, FR, Extentions
+    Armv8_5 = 0x85,
+    /// ARMv8.6 - BF16, I8MM extensions
+    Armv8_6 = 0x86,
+    /// ARMv8.7 - WFXT, HAFDBS extensions
+    Armv8_7 = 0x87,
+    /// ARMv8.8 - Overwrite, Permission overlay extensions
+    Armv8_8 = 0x88,
+    /// ARMv8.9 - GCS, TIDCP1 extensions
+    Armv8_9 = 0x89,
+    /// ARMv9.0 - SVE2, improved VArch, Pointer Auth
+    Armv9_0 = 0x90,
+    /// ARMv9.1 - Enhanced MTE, PAC
+    Armv9_1 = 0x91,
+    /// ARMv9.2 - Transparent HUK, RME
+    Armv9_2 = 0x92,
+    /// ARMv9.3 - LSE128, CX1
+    Armv9_3 = 0x93,
+    /// ARMv9.4 - GCS, THE
+    Armv9_4 = 0x94,
+    /// Unknown version
+    Unknown = 0x00,
+}
+
+impl ArchVersion {
+    /// Get architecture version as string
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ArchVersion::Armv8_0 => "ARMv8.0",
+            ArchVersion::Armv8_1 => "ARMv8.1",
+            ArchVersion::Armv8_2 => "ARMv8.2",
+            ArchVersion::Armv8_3 => "ARMv8.3",
+            ArchVersion::Armv8_4 => "ARMv8.4",
+            ArchVersion::Armv8_5 => "ARMv8.5",
+            ArchVersion::Armv8_6 => "ARMv8.6",
+            ArchVersion::Armv8_7 => "ARMv8.7",
+            ArchVersion::Armv8_8 => "ARMv8.8",
+            ArchVersion::Armv8_9 => "ARMv8.9",
+            ArchVersion::Armv9_0 => "ARMv9.0",
+            ArchVersion::Armv9_1 => "ARMv9.1",
+            ArchVersion::Armv9_2 => "ARMv9.2",
+            ArchVersion::Armv9_3 => "ARMv9.3",
+            ArchVersion::Armv9_4 => "ARMv9.4",
+            ArchVersion::Unknown => "Unknown",
+        }
+    }
+
+    /// Check if ARMv9 or later
+    pub fn is_armv9(&self) -> bool {
+        matches!(self,
+            ArchVersion::Armv9_0 | ArchVersion::Armv9_1 |
+            ArchVersion::Armv9_2 | ArchVersion::Armv9_3 | ArchVersion::Armv9_4
+        )
+    }
+}
+
+/// SVE (Scalable Vector Extension) information
+#[derive(Debug, Clone, Copy)]
+pub struct SveInfo {
+    /// SVE version (0 = not supported, 1 = SVE, 2 = SVE2)
+    pub version: u8,
+    /// Vector length in bits (128-2048, multiple of 128)
+    pub vl: u16,
+    /// Maximum supported vector length
+    pub max_vl: u16,
+}
+
+impl Default for SveInfo {
+    fn default() -> Self {
+        Self {
+            version: 0,
+            vl: 0,
+            max_vl: 0,
+        }
+    }
+}
+
+/// Pointer Authentication information
+#[derive(Debug, Clone, Copy)]
+pub struct PauthInfo {
+    /// APIA (Instruction authentication A) supported
+    pub apia: bool,
+    /// APIB (Instruction authentication B) supported
+    pub apib: bool,
+    /// APDA (Data authentication A) supported
+    pub apda: bool,
+    /// APDB (Data authentication B) supported
+    pub apdb: bool,
+    /// APGA (Generic authentication) supported
+    pub apga: bool,
+    /// Enhanced PAC (EPAC) supported
+    pub epac: bool,
+    /// PAC 2.0 (PAC_QARMA5) supported
+    pub pac2_0: bool,
+    /// PAC combined (impDef) supported
+    pub pac_combined: bool,
+}
+
+impl Default for PauthInfo {
+    fn default() -> Self {
+        Self {
+            apia: false,
+            apib: false,
+            apda: false,
+            apdb: false,
+            apga: false,
+            epac: false,
+            pac2_0: false,
+            pac_combined: false,
+        }
+    }
+}
+
+/// Virtualization features
+#[derive(Debug, Clone, Copy)]
+pub struct VirtualizationFeatures {
+    /// VHE (Virtualization Host Extension) supported
+    pub vhe: bool,
+    /// Stage-2 Page table walk dirty tracking
+    pub st2_dirty: bool,
+    /// Hardware update of dirty flag
+    pub hw_dirty: bool,
+    /// Hardware AF (Access Flag) update
+    pub hw_af: bool,
+    /// TTL (TLB Instruction/VMID Invalidate) supported
+    pub ttl: bool,
+    /// VMID16 (16-bit VMID) supported
+    pub vmid16: bool,
+    /// BBML (Block-based Break-Before-Make) supported
+    pub bbml: bool,
+    /// ECV (Enhanced Counter Virtualization) supported
+    pub ecv: bool,
+    /// FGT (Fine-Grained Traps) supported
+    pub fgt: bool,
+    /// FGT2 (Extended FGT) supported
+    pub fgt2: bool,
+    /// HAFDBS (Hardware Access Flag Dirty Bit State) supported
+    pub hafdbs: bool,
+}
+
+impl Default for VirtualizationFeatures {
+    fn default() -> Self {
+        Self {
+            vhe: false,
+            st2_dirty: false,
+            hw_dirty: false,
+            hw_af: false,
+            ttl: false,
+            vmid16: false,
+            bbml: false,
+            ecv: false,
+            fgt: false,
+            fgt2: false,
+            hafdbs: false,
+        }
     }
 }
 
@@ -240,18 +439,51 @@ pub struct CpuInfo {
     pub features: CpuFeatures,
     /// Cache line size
     pub cache_line_size: u32,
+    /// Architecture version
+    pub arch_version: ArchVersion,
+    /// SVE information
+    pub sve_info: SveInfo,
+    /// Pointer authentication information
+    pub pauth_info: PauthInfo,
+    /// Virtualization features
+    pub virt_features: VirtualizationFeatures,
+    /// Physical address size in bits
+    pub pa_bits: u8,
+    /// Virtual address size in bits
+    pub va_bits: u8,
 }
 
 impl CpuInfo {
     /// Get CPU ID string
     pub fn id_string(&self) -> String {
         format!(
-            "{} {} r{}p{}",
+            "{} {} r{}p{} ({})",
             self.implementer.as_str(),
             self.part.as_str(),
             self.variant,
-            self.revision
+            self.revision,
+            self.arch_version.as_str()
         )
+    }
+
+    /// Get PA size in bits
+    pub fn pa_size_bits(&self) -> u8 {
+        self.pa_bits
+    }
+
+    /// Get VA size in bits
+    pub fn va_size_bits(&self) -> u8 {
+        self.va_bits
+    }
+
+    /// Check if VHE is available
+    pub fn has_vhe(&self) -> bool {
+        self.virt_features.vhe
+    }
+
+    /// Get SVE vector length
+    pub fn sve_vl(&self) -> u16 {
+        self.sve_info.vl
     }
 }
 
@@ -311,9 +543,18 @@ pub fn detect() {
     let revision = (midr & 0xF) as u8;
 
     let mut features = CpuFeatures::empty();
+    let mut arch_version = ArchVersion::Armv8_0;
+    let mut sve_info = SveInfo::default();
+    let mut pauth_info = PauthInfo::default();
+    let mut virt_features = VirtualizationFeatures::default();
+    let mut pa_bits: u8 = 48;
+    let mut va_bits: u8 = 48;
 
-    // Detect features from ID_AA64PFR0_EL1
+    // ============================================================
+    // Detect features from ID_AA64PFR0_EL1 and ID_AA64PFR1_EL1
+    // ============================================================
     let pfr0 = unsafe { info::read_id_aa64pfr0_el1() };
+    let pfr1 = unsafe { info::read_id_aa64pfr1_el1() };
 
     // EL0, EL1, EL2, EL3 fields (4 bits each)
     let el0 = (pfr0 >> 0) & 0xF;
@@ -344,12 +585,33 @@ pub fn detect() {
         features |= CpuFeatures::AARCH32;
     }
 
-    // Detect more features from ID_AA64MMFR0_EL1
+    // Check from PFR1 for BTI, PMU, etc.
+    let bt = (pfr1 >> 4) & 0xF; // Branch Target Identification
+    if bt != 0 {
+        features |= CpuFeatures::BTI;
+        if bt >= 2 {
+            arch_version = arch_version.max(ArchVersion::Armv8_5);
+        }
+    }
+
+    let ssbs = (pfr1 >> 8) & 0xF; // Speculation Store Bypass Safe
+    if ssbs != 0 {
+        features |= CpuFeatures::SPECRES;
+        if ssbs >= 2 {
+            arch_version = arch_version.max(ArchVersion::Armv8_5);
+        }
+    }
+
+    // ============================================================
+    // Detect features from ID_AA64MMFR0_EL1, MMFR1, MMFR2
+    // ============================================================
     let mmfr0 = unsafe { info::read_id_aa64mmfr0_el1() };
+    let mmfr1 = unsafe { info::read_id_aa64mmfr1_el1() };
+    let mmfr2 = unsafe { info::read_id_aa64mmfr2_el1() };
 
     // PARange (Physical Address Size)
     let pa_range = (mmfr0 >> 0) & 0xF;
-    let pa_bits = match pa_range {
+    pa_bits = match pa_range {
         0b0000 => 32,
         0b0001 => 36,
         0b0010 => 40,
@@ -357,9 +619,21 @@ pub fn detect() {
         0b0100 => 44,
         0b0101 => 48,
         0b0110 => 52,
-        _ => 48, // Default to 48-bit
+        _ => 48,
     };
-    features |= CpuFeatures::from_bits_truncate(((pa_bits - 32) as u64) << 12);
+
+    // VARange (Virtual Address Size)
+    let va_range = (mmfr0 >> 4) & 0xF;
+    va_bits = match va_range {
+        0b0000 => 32,
+        0b0001 => 36,
+        0b0010 => 40,
+        0b0011 => 42,
+        0b0100 => 44,
+        0b0101 => 48,
+        0b0110 => 52,
+        _ => 48,
+    };
 
     // TGran4 (4KB granule support)
     let tgran4 = (mmfr0 >> 28) & 0xF;
@@ -379,28 +653,244 @@ pub fn detect() {
         features |= CpuFeatures::GRAN64K;
     }
 
-    // Detect more features from ID_AA64ISAR0_EL1
+    // Check for ECV (Enhanced Counter Virtualization) - MMFR2
+    let ecv = (mmfr2 >> 0) & 0xF;
+    if ecv != 0 {
+        virt_features.ecv = true;
+        features |= CpuFeatures::ECV;
+        if ecv >= 2 {
+            arch_version = arch_version.max(ArchVersion::Armv8_6);
+        }
+    }
+
+    // Check for GTG (Guest Translation Granule)
+    let gtg = (mmfr2 >> 28) & 0xF;
+    if gtg != 0 {
+        virt_features.vmid16 = true;
+        features |= CpuFeatures::GTG;
+        arch_version = arch_version.max(ArchVersion::Armv8_6);
+    }
+
+    // ============================================================
+    // Detect features from ID_AA64ISAR0_EL1 and ISAR1, ISAR2
+    // ============================================================
     let isar0 = unsafe { info::read_id_aa64isar0_el1() };
+    let isar1 = unsafe { info::read_id_aa64isar1_el1() };
+    let isar2 = unsafe { info::read_id_aa64isar2_el1() };
 
     // SVE
     let sve = (isar0 >> 0) & 0xF;
     if sve != 0 {
         features |= CpuFeatures::SVE;
+        sve_info.version = 1;
+        arch_version = arch_version.max(ArchVersion::Armv8_2);
+
+        // Read SVE features from ZFR0
+        let zfr0 = unsafe { info::read_id_aa64zfr0_el1() };
+        sve_info.vl = 128 << ((zfr0 >> 0) & 0xF); // ZLen field
+        sve_info.max_vl = 128 << ((zfr0 >> 4) & 0xF); // ZLen_max field
+
+        // SVE2 from ISAR1
+        let sve2 = (isar1 >> 0) & 0xF;
+        if sve2 != 0 {
+            sve_info.version = 2;
+            features |= CpuFeatures::SVE2;
+            arch_version = arch_version.max(ArchVersion::Armv8_3);
+        }
     }
 
     // PAUTH
     let pauth = (isar0 >> 4) & 0xF;
     if pauth != 0 {
         features |= CpuFeatures::PAUTH;
+        pauth_info.apia = true;
+        pauth_info.apda = true;
+        arch_version = arch_version.max(ArchVersion::Armv8_3);
+
+        // Check for enhanced PAC features from ISAR1/ISAR2
+        let apda = (isar1 >> 4) & 0xF;
+        let apib = (isar1 >> 8) & 0xF;
+        let apdb = (isar1 >> 12) & 0xF;
+        let apga = (isar1 >> 16) & 0xF;
+
+        pauth_info.apib = apib != 0;
+        pauth_info.apdb = apdb != 0;
+        pauth_info.apga = apga != 0;
+
+        // Check for EPAC (Enhanced PAC)
+        let epac = (isar1 >> 20) & 0xF;
+        if epac != 0 {
+            pauth_info.epac = true;
+            features |= CpuFeatures::EPAC;
+            arch_version = arch_version.max(ArchVersion::Armv8_3);
+        }
+
+        // Check for PAC 2.0 from ISAR2
+        let pac_frac = (isar2 >> 0) & 0xF;
+        if pac_frac >= 2 {
+            pauth_info.pac2_0 = true;
+            features |= CpuFeatures::CONSTPAC;
+            arch_version = arch_version.max(ArchVersion::Armv8_3);
+        }
     }
 
-    // Detect more features from ID_AA64DFR0_EL1
+    // Check for DPB (Data Barrier) - ARMv8.1
+    let dpb = (isar0 >> 8) & 0xF;
+    if dpb != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // Check for CRC32
+    let crc32 = (isar0 >> 12) & 0xF;
+    if crc32 != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // Check for LSE (Large System Extension) - ARMv8.1
+    let lse = (isar0 >> 16) & 0xF;
+    if lse != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // Check for LSE2 - ARMv8.5
+    let lse2 = (isar1 >> 28) & 0xF;
+    if lse2 != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_5);
+    }
+
+    // Check for FP16 - ARMv8.2
+    let fp16 = (isar0 >> 20) & 0xF;
+    if fp16 != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_2);
+    }
+
+    // Check for RDM (Read Multiple) - ARMv8.1
+    let rdm = (isar0 >> 24) & 0xF;
+    if rdm != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // Check for SVE-BIT (SVE/FPR16 supports) - ARMv8.5
+    let svebit = (isar1 >> 24) & 0xF;
+    if svebit != 0 {
+        features |= CpuFeatures::SVB;
+        arch_version = arch_version.max(ArchVersion::Armv8_5);
+    }
+
+    // Check for MTE (Memory Tagging Extension) - ARMv8.5
+    let mte = (isar1 >> 20) & 0xF;
+    if mte != 0 {
+        features |= CpuFeatures::MTE;
+        arch_version = arch_version.max(ArchVersion::Armv8_5);
+    }
+
+    // Check for SME (Scalable Matrix Extension) - ARMv9
+    let sme = (isar1 >> 12) & 0xF;
+    if sme != 0 {
+        features |= CpuFeatures::SME;
+        arch_version = arch_version.max(ArchVersion::Armv9_0);
+    }
+
+    // ============================================================
+    // Detect features from ID_AA64DFR0_EL1 and DFR1
+    // ============================================================
     let dfr0 = unsafe { info::read_id_aa64dfr0_el1() };
+    let dfr1 = unsafe { info::read_id_aa64dfr1_el1() };
 
     // PMUVer
     let pmuver = (dfr0 >> 8) & 0xF;
     if pmuver != 0 {
         features |= CpuFeatures::PMU_V3;
+    }
+
+    // Check for HPMN0 (Hierarchical PMU) - ARMv8.4
+    let hpmn0 = (dfr0 >> 12) & 0xF;
+    if hpmn0 != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_4);
+    }
+
+    // Check for MTPMU and PMUv3 from DFR1
+    let debug_ver = (dfr1 >> 0) & 0xF;
+    if debug_ver >= 9 {
+        arch_version = arch_version.max(ArchVersion::Armv8_4);
+    }
+
+    // ============================================================
+    // Detect virtualization features
+    // ============================================================
+
+    // Check for VHE from ID_AA64MMFR1_EL1
+    let vh = (mmfr1 >> 28) & 0xF;
+    if vh != 0 {
+        virt_features.vhe = true;
+        features |= CpuFeatures::VHE;
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // Check for VMID16 from MMFR1
+    let vmid_bits = (mmfr1 >> 4) & 0xF;
+    if vmid_bits == 2 {
+        virt_features.vmid16 = true;
+        arch_version = arch_version.max(ArchVersion::Armv8_5);
+    }
+
+    // Check for Hardware AF (Access Flag) update
+    let hafs = (mmfr1 >> 8) & 0xF;
+    if hafs != 0 {
+        virt_features.hw_af = true;
+        arch_version = arch_version.max(ArchVersion::Armv8_2);
+    }
+
+    // Check for Hardware dirty flag update
+    let hafdbs = (mmfr1 >> 12) & 0xF;
+    if hafdbs != 0 {
+        virt_features.hw_dirty = true;
+        virt_features.hafdbs = true;
+        features |= CpuFeatures::RAS;
+        arch_version = arch_version.max(ArchVersion::Armv8_4);
+    }
+
+    // Check for XNX (Execute-never) - ARMv8.2
+    let xnx = (mmfr1 >> 16) & 0xF;
+    if xnx != 0 {
+        arch_version = arch_version.max(ArchVersion::Armv8_2);
+    }
+
+    // ============================================================
+    // Detect more features from ID_AA64FR0_EL1 (Floating-point)
+    // ============================================================
+    let fr0 = unsafe { info::read_id_aa64fr0_el1() };
+
+    // Check for CSV2, CSV3 - Speculation variant
+    let csv2 = (fr0 >> 20) & 0xF;
+    if csv2 != 0 {
+        features |= CpuFeatures::CSV2;
+        if csv2 >= 2 {
+            features |= CpuFeatures::CSV3;
+            arch_version = arch_version.max(ArchVersion::Armv8_5);
+        }
+    }
+
+    // Check for DIT (Data Independent Timing) - ARMv8.4
+    let dit = (fr0 >> 24) & 0xF;
+    if dit != 0 {
+        features |= CpuFeatures::DIT;
+        arch_version = arch_version.max(ArchVersion::Armv8_4);
+    }
+
+    // ============================================================
+    // Determine architecture version from detected features
+    // ============================================================
+    // Base version is 8.0, update based on detected features above
+    if features.contains(CpuFeatures::VHE) ||
+       features.contains(CpuFeatures::PAN) {
+        arch_version = arch_version.max(ArchVersion::Armv8_1);
+    }
+
+    // ARMv9 detection (from FR0 or SVE/SVE2)
+    if arch_version >= ArchVersion::Armv9_0 ||
+       features.contains(CpuFeatures::SVE2) {
+        arch_version = ArchVersion::Armv9_0;
     }
 
     let info = CpuInfo {
@@ -412,10 +902,29 @@ pub fn detect() {
         revision,
         features,
         cache_line_size: 64, // Default to 64 bytes for ARM64
+        arch_version,
+        sve_info,
+        pauth_info,
+        virt_features,
+        pa_bits,
+        va_bits,
     };
 
     unsafe {
         CPU_INFO = Some(info);
+    }
+
+    log::info!("CPU: {}", info.id_string());
+    log::info!("  PA bits: {}, VA bits: {}", pa_bits, va_bits);
+    log::info!("  Features: {:?}", info.features);
+    if info.sve_info.version > 0 {
+        log::info!("  SVE: v{}, VL={}", info.sve_info.version, info.sve_info.vl);
+    }
+    if info.pauth_info.apia {
+        log::info!("  PAUTH: APA");
+    }
+    if info.virt_features.vhe {
+        log::info!("  Virtualization: VHE");
     }
 }
 

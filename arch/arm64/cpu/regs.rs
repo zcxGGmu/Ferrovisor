@@ -319,6 +319,78 @@ pub mod info {
         unsafe { read_sysreg::<3, 0, 0, 7, 0>() }
     }
 
+    /// Read ID_AA64MMFR1_EL1 (Memory Model Feature Register 1)
+    #[inline]
+    pub fn read_id_aa64mmfr1_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 7, 1>() }
+    }
+
+    /// Read ID_AA64MMFR2_EL1 (Memory Model Feature Register 2)
+    #[inline]
+    pub fn read_id_aa64mmfr2_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 7, 2>() }
+    }
+
+    /// Read ID_AA64ISAR1_EL1 (Instruction Set Attribute Register 1)
+    #[inline]
+    pub fn read_id_aa64isar1_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 6, 1>() }
+    }
+
+    /// Read ID_AA64ISAR2_EL1 (Instruction Set Attribute Register 2)
+    #[inline]
+    pub fn read_id_aa64isar2_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 6, 2>() }
+    }
+
+    /// Read ID_AA64PFR1_EL1 (Processor Feature Register 1)
+    #[inline]
+    pub fn read_id_aa64pfr1_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 4, 1>() }
+    }
+
+    /// Read ID_AA64DFR1_EL1 (Debug Feature Register 1)
+    #[inline]
+    pub fn read_id_aa64dfr1_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 5, 1>() }
+    }
+
+    /// Read ID_AA64ZFR0_EL1 (SVE Feature Register)
+    #[inline]
+    pub fn read_id_aa64zfr0_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 4, 4>() }
+    }
+
+    /// Read ID_AA64SMFR0_EL1 (SME Feature Register)
+    #[inline]
+    pub fn read_id_aa64smfr0_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 4, 5>() }
+    }
+
+    /// Read ID_AA64FR0_EL1 (Floating-point Feature Register)
+    #[inline]
+    pub fn read_id_aa64fr0_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 4, 6>() }
+    }
+
+    /// Read MVFR0_EL1 (Media and VFP Feature Register 0)
+    #[inline]
+    pub fn read_mvfr0_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 3, 0>() }
+    }
+
+    /// Read MVFR1_EL1 (Media and VFP Feature Register 1)
+    #[inline]
+    pub fn read_mvfr1_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 3, 1>() }
+    }
+
+    /// Read REVIDR_EL1 (Revision Register)
+    #[inline]
+    pub fn read_revidr_el1() -> u64 {
+        unsafe { read_sysreg::<3, 0, 0, 0, 6>() }
+    }
+
     /// Read CNTFRQ_EL0 (Counter Frequency Register)
     #[inline]
     pub fn read_cntfrq_el0() -> u64 {

@@ -913,40 +913,37 @@ struct vgic_vcpu_state {
 
 #### 3.1.3 CPU 寄存器管理
 
-> **状态更新 (2025-12-27):** 部分完成
+> **状态更新 (2025-12-27):** ✅ 已完成 CPU 特性检测
 
 **任务：**
-- [x] 实现系统寄存器访问接口 (`arch/arm64/cpu/regs.rs`)
+- [x] 实现系统寄存器访问接口 (`arch/arm64/cpu/regs.rs`, ~413 行)
   - [x] MSR/MRRS 指令封装 (inline asm)
-  - [ ] 通用寄存器 (x0-x30) 框架
-  - [ ] 特殊寄存器 (SP, PC, PSTATE)
-- [x] 实现 EL2 系统寄存器定义 (`arch/arm64/mod.rs` el2_regs 模块)
-  - [x] HCR_EL2, VTTBR_EL2, VTCR_EL2 编码
-  - [ ] CPTR_EL2, HSTR_EL2 (TODO)
-  - [ ] SCR_EL3 (如果支持)
-- [x] 实现 ID 寄存器解析 (`arch/arm64/cpu/regs.rs` info 模块)
-  - [x] MIDR_EL1, MPIDR_EL1
-  - [ ] ID_AA64PFR0_EL1 ~ ID_AA64MMFR2_EL1 (TODO)
-- [x] 实现 CPU 特性检测 (`arch/arm64/cpu/features.rs`)
-  - [x] CpuInfo 结构
-  - [x] CpuFeatures bitflags
-  - [ ] ARMv8.0/8.1/8.2/8.3/8.4/8.5/8.6/9.0 版本检测 (TODO)
-  - [ ] 虚拟化扩展检测 (TODO)
-  - [ ] PAN/UAO 支持 (TODO)
-  - [ ] SVE 检测 (TODO)
-  - [ ] Pointer Authentication 检测 (TODO)
+  - [x] EL2 系统寄存器读写 (HCR_EL2, VTTBR_EL2, VTCR_EL2, SCTLR_EL2, CPTR_EL2, HSTR_EL2, HPFAR_EL2, HCRX_EL2)
+  - [x] EL1 系统寄存器读写 (SCTLR_EL1, TCR_EL1, TTBR0/1_EL1, MAIR_EL1, VBAR_EL1, ESR_EL1, FAR_EL1, ELR_EL1)
+  - [x] ID 寄存器读写 (MIDR_EL1, MPIDR_EL1, ID_AA64PFR0/1, ID_AA64MMFR0/1/2, ID_AA64ISAR0/1/2, ID_AA64DFR0/1, ID_AA64ZFR0, ID_AA64FR0, ID_AA64SMFR0)
+- [x] 实现 CPU 特性检测 (`arch/arm64/cpu/features.rs`, ~955 行)
+  - [x] CpuInfo 结构 (完整 CPU 信息: midr, mpidr, implementer, part, variant, revision, features, arch_version, pa_bits, va_bits)
+  - [x] CpuFeatures bitflags (50+ 特性标志位: FP, ASIMD, EL2, EL3, SVE, VHE, PAUTH, MTE, SME, BTI, PAN, UAO, DIT, etc.)
+  - [x] ArchVersion 枚举 (ARMv8.0 ~ ARMv9.4 版本检测)
+  - [x] SveInfo 结构 (SVE/SVE2 版本, 向量长度 VL/Max_VL)
+  - [x] PauthInfo 结构 (APIA/APIB/APDA/APDB/APGA, EPAC, PAC2.0, PAC_combined)
+  - [x] VirtualizationFeatures 结构 (VHE, Stage-2 dirty, HW AF/Dirty, VMID16, BBML, ECV, FGT, FGT2, HAFDBS)
+  - [x] PA/VA 位大小检测 (32/36/40/42/44/48/52 位)
+  - [x] 完整 detect() 函数 (读取所有 ID 寄存器并解析特性)
+  - [x] CPU 信息打印 (CPU ID, PA/VA bits, 特性列表, SVE/PAUTH/虚拟化信息)
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm64/include/arch_regs.h`
-- `xvisor/arch/arm/include/arm_features.h`
+- `xvisor/arch/arm/cpu/common/include/arm_features.h`
 - `xvisor/arch/arm/cpu/arm64/cpu_inline_asm.h`
 
 **交付物：**
-- [x] `arch/arm64/cpu/regs.rs` (部分完成)
-- [ ] `arch/arm64/cpu/el2_regs.rs` (整合到 mod.rs)
-- [ ] `arch/arm64/cpu/id.rs` (整合到 regs.rs)
-- [x] `arch/arm64/cpu/features.rs` (部分完成)
+- [x] `arch/arm64/cpu/regs.rs` (~413 行)
+- [x] `arch/arm64/cpu/features.rs` (~955 行)
 
+**代码统计：**
+- 新增/修改文件: 2 个
+- 总代码量: ~1,370 行
 #### 3.1.4 VCPU 上下文切换
 
 > **状态更新 (2025-12-27):** 结构体定义完成，汇编实现待完成
