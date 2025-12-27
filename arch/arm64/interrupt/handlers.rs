@@ -30,6 +30,10 @@
 
 use core::ffi::c_void;
 
+use crate::arch::arm64::cpu::vcpu::{
+    ExtendedVcpuContext, TrapInfo, TrapHandler, DefaultTrapHandler, handle_trap,
+};
+
 /// Exception type identifier
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -234,11 +238,32 @@ pub type ExceptionHandler = fn(&mut ExceptionContext, ExceptionType);
 /// Global exception handler (can be set by the hypervisor)
 static mut EXCEPTION_HANDLER: Option<ExceptionHandler> = None;
 
+/// VCPU trap handler (used for guest exceptions)
+static mut VCPU_TRAP_HANDLER: Option<*mut dyn TrapHandler> = None;
+
 /// Set the exception handler
 pub fn set_exception_handler(handler: ExceptionHandler) {
     unsafe {
         EXCEPTION_HANDLER = Some(handler);
     }
+}
+
+/// Set the VCPU trap handler for guest exceptions
+///
+/// # Safety
+/// The handler pointer must be valid for the lifetime of the hypervisor
+pub unsafe fn set_vcpu_trap_handler(handler: *mut dyn TrapHandler) {
+    VCPU_TRAP_HANDLER = Some(handler);
+}
+
+/// Clear the VCPU trap handler
+pub unsafe fn clear_vcpu_trap_handler() {
+    VCPU_TRAP_HANDLER = None;
+}
+
+/// Get current VCPU trap handler
+pub unsafe fn get_vcpu_trap_handler() -> Option<*mut dyn TrapHandler> {
+    VCPU_TRAP_HANDLER
 }
 
 /// Handle EL2 synchronous exception from SP0
@@ -292,6 +317,18 @@ pub extern "C" fn rust_el2_serror_spx(ctx: *mut ExceptionContext, exc_type: u32)
 /// Handle guest synchronous exception from AArch64
 #[no_mangle]
 pub extern "C" fn rust_guest_sync_a64(ctx: *mut ExceptionContext, exc_type: u32) {
+    let exc_type = ExceptionType::from_raw(exc_type);
+
+    // Try trap handler first for guest sync exceptions
+    unsafe {
+        if let Some(trap_handler) = VCPU_TRAP_HANDLER {
+            if let Ok(()) = handle_guest_trap(ctx, exc_type, &mut *trap_handler) {
+                return;
+            }
+        }
+    }
+
+    // Fall back to default exception handler
     handle_exception(ctx, exc_type);
 }
 
@@ -316,6 +353,18 @@ pub extern "C" fn rust_guest_serror_a64(ctx: *mut ExceptionContext, exc_type: u3
 /// Handle guest synchronous exception from AArch32
 #[no_mangle]
 pub extern "C" fn rust_guest_sync_a32(ctx: *mut ExceptionContext, exc_type: u32) {
+    let exc_type = ExceptionType::from_raw(exc_type);
+
+    // Try trap handler first for guest sync exceptions
+    unsafe {
+        if let Some(trap_handler) = VCPU_TRAP_HANDLER {
+            if let Ok(()) = handle_guest_trap(ctx, exc_type, &mut *trap_handler) {
+                return;
+            }
+        }
+    }
+
+    // Fall back to default exception handler
     handle_exception(ctx, exc_type);
 }
 
@@ -335,6 +384,82 @@ pub extern "C" fn rust_guest_fiq_a32(ctx: *mut ExceptionContext, exc_type: u32) 
 #[no_mangle]
 pub extern "C" fn rust_guest_serror_a32(ctx: *mut ExceptionContext, exc_type: u32) {
     handle_exception(ctx, exc_type);
+}
+
+// ============================================================================
+// Guest Trap Handling
+// ============================================================================
+
+/// Handle guest trap using VCPU trap handler
+///
+/// This function bridges the exception handler with the VCPU trap handler.
+/// It reads ESR_EL2 and FAR_EL2 to create trap information and delegates
+/// to the trap handler.
+fn handle_guest_trap(
+    ctx: *mut ExceptionContext,
+    exc_type: ExceptionType,
+    handler: &mut dyn TrapHandler,
+) -> Result<(), &'static str> {
+    unsafe {
+        // Read exception syndrome and fault address
+        let esr: u64;
+        let far: u64;
+        core::arch::asm!(
+            "mrs {}, esr_el2",
+            out(reg) esr
+        );
+        core::arch::asm!(
+            "mrs {}, far_el2",
+            out(reg) far
+        );
+
+        let ctx_ref = &*ctx;
+
+        // Create trap info
+        let trap = TrapInfo::new(
+            0, // vcpu_id (TODO: get from context)
+            esr,
+            far,
+            ctx_ref.elr,
+            ctx_ref.spsr,
+        );
+
+        // Create extended VCPU context from exception context
+        let mut vcpu_ctx = ExtendedVcpuContext::new();
+        vcpu_ctx.gprs.x = ctx_ref.x;
+        vcpu_ctx.sysregs.elr_el1 = ctx_ref.elr as u64;
+        vcpu_ctx.sysregs.spsr_el1 = ctx_ref.spsr as u64;
+
+        // Handle the trap
+        let resolution = handle_trap(&vcpu_ctx, &trap, handler)?;
+
+        // Apply resolution
+        match resolution {
+            crate::arch::arm64::cpu::vcpu::TrapResolution::Resume => {
+                // Just return to guest
+                log::debug!("Trap handled, resuming guest");
+                Ok(())
+            }
+            crate::arch::arm64::cpu::vcpu::TrapResolution::InjectException => {
+                // Exception will be injected to guest
+                log::warn!("Trap handled, injecting exception to guest");
+                Err("Exception injected")
+            }
+            crate::arch::arm64::cpu::vcpu::TrapResolution::Halt => {
+                log::error!("Trap handler requested VCPU halt");
+                Err("VCPU halted")
+            }
+            crate::arch::arm64::cpu::vcpu::TrapResolution::Emulate => {
+                log::debug!("Trap requires emulation");
+                // TODO: Implement instruction emulation
+                Err("Emulation not implemented")
+            }
+            crate::arch::arm64::cpu::vcpu::TrapResolution::Callback => {
+                log::debug!("Trap requires callback to higher level");
+                Err("Callback required")
+            }
+        }
+    }
 }
 
 /// Internal exception handler

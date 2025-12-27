@@ -6,6 +6,9 @@
 /// VCPU context management
 pub mod context;
 
+/// VCPU trap handling
+pub mod trap;
+
 pub use context::{
     SavedGprs, SavedGprsOffsets, VcpuContextOffsets,
     VfpRegs, ExtendedVcpuContext,
@@ -13,6 +16,15 @@ pub use context::{
     vfp_save, vfp_restore,
     gprs_save, gprs_restore,
     switch_to_guest,
+};
+
+pub use trap::{
+    TrapReason, TrapInfo, TrapResolution,
+    TrapHandler, DefaultTrapHandler,
+    TrappedInstruction, ExceptionInfo,
+    handle_trap, decode_trapped_instruction, create_exception_info,
+    advance_pc, is_aarch32_trap, get_aarch32_mode,
+    Aarch32Mode, is_aarch32,
 };
 
 // Re-export from parent modules

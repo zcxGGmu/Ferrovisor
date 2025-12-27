@@ -963,10 +963,19 @@ struct vgic_vcpu_state {
   - Host -> Guest 切换 (ERET 到 EL1)
   - Guest -> Host 切换 (异常到 EL2)
   - VCPU 状态保存/恢复
-- [ ] 实现 Traps 处理 (`arch/arm64/cpu/vcpu/trap.rs`)
-  - 异常级别转换处理
-  - 异步异常处理
-  - Fault 处理
+- [x] 实现 Traps 处理 (`arch/arm64/cpu/vcpu/trap.rs`, ~614 行)
+  - [x] TrapReason 枚举 (SysRegAccess, FpSimdTrap, WfiWfe, Stage2Fault, SmcCall 等)
+  - [x] TrapInfo 结构 (ESR, FAR, ISS, IL, PC, SPSR)
+  - [x] TrapResolution 枚举 (Resume, InjectException, Halt, Emulate, Callback)
+  - [x] TrapHandler trait (handle_sysreg_access, handle_fpsimd_trap, handle_stage2_fault 等)
+  - [x] DefaultTrapHandler 实现
+  - [x] handle_trap() 主处理函数
+  - [x] ExceptionInfo 异常注入
+  - [x] AArch32 支持 (is_aarch32_trap, get_aarch32_mode)
+- [x] 集成 Trap 处理到异常处理 (`arch/arm64/interrupt/handlers.rs`)
+  - [x] set_vcpu_trap_handler() 设置 trap handler
+  - [x] handle_guest_trap() 集成函数
+  - [x] guest_sync_a64/a32 处理集成
 
 **参考文件：**
 - `xvisor/arch/arm/cpu/arm64/cpu_vcpu_helper.c` (899 行)
